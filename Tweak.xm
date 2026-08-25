@@ -1445,6 +1445,55 @@ static BOOL detectBoardFlipped(UIView *board) {
 
 static NSMutableArray *gFakeTouches = nil;
 
+static NSMutableSet *sDumpedClasses = nil;
+
+static void dumpMoveSelectors(id obj, NSString *tag) {
+    if (!obj) return;
+    Class c = object_getClass(obj);
+    if (!c) return;
+    if (!sDumpedClasses) sDumpedClasses = [NSMutableSet set];
+    NSString *key = [tag stringByAppendingString:NSStringFromClass(c)];
+    if ([sDumpedClasses containsObject:key]) return;
+    [sDumpedClasses addObject:key];
+
+    NSArray *keywords = @[@"move", @"play", @"tap", @"touch", @"piece",
+                          @"select", @"square", @"drag", @"click", @"perform"];
+    unsigned int n = 0;
+    Method *methods = class_copyMethodList(c, &n);
+    if (methods) {
+        NSMutableArray *hits = [NSMutableArray array];
+        for (unsigned int i = 0; i < n && hits.count < 50; i++) {
+            NSString *name = NSStringFromSelector(method_getName(methods[i]));
+            NSString *lower = name.lowercaseString;
+            for (NSString *k in keywords) {
+                if ([lower containsString:k]) { [hits addObject:name]; break; }
+            }
+        }
+        free(methods);
+        if (hits.count)
+            dbg([NSString stringWithFormat:@"DUMP[%@] %@ (%lu): %@", tag, NSStringFromClass(c),
+                 (unsigned long)hits.count, [hits componentsJoinedByString:@", "]]);
+    }
+
+    Class meta = object_getClass(c);
+    unsigned int cn = 0;
+    Method *cmethods = class_copyMethodList(meta, &cn);
+    if (cmethods) {
+        NSMutableArray *hits = [NSMutableArray array];
+        for (unsigned int i = 0; i < cn && hits.count < 30; i++) {
+            NSString *name = NSStringFromSelector(method_getName(cmethods[i]));
+            NSString *lower = name.lowercaseString;
+            for (NSString *k in keywords) {
+                if ([lower containsString:k]) { [hits addObject:name]; break; }
+            }
+        }
+        free(cmethods);
+        if (hits.count)
+            dbg([NSString stringWithFormat:@"DUMP[%@] +(%@): %@", tag,
+                 NSStringFromClass(c), [hits componentsJoinedByString:@", "]]);
+    }
+}
+
 static UITouch *chAcquireFakeTouch(void) {
     if (!gFakeTouches) gFakeTouches = [NSMutableArray array];
     UITouch *t = gFakeTouches.firstObject;
@@ -2000,6 +2049,7 @@ static void enginePollTick(void) {
         gEngineCtrl = gHookedEngine;
         dbg([NSString stringWithFormat:@"ENGINE: via hook %@",
              NSStringFromClass([gHookedEngine class])]);
+        dumpMoveSelectors(gHookedEngine, @"engine");
     }
 
     if (!gEngineCtrl) {
@@ -2011,6 +2061,7 @@ static void enginePollTick(void) {
                 gEngineCtrl = found;
                 dbg([NSString stringWithFormat:@"ENGINE: found %@",
                      NSStringFromClass([found class])]);
+                dumpMoveSelectors(found, @"engine");
                 break;
             }
         }
@@ -2271,6 +2322,7 @@ static BOOL processBotBoard(UIView *board) {
         return NO;
     if (!isBoardOnScreen(board)) return NO;
     gBotBoard = board;
+    dumpMoveSelectors(board, @"board");
 
     BOOL inBotGame = NO;
     gPuzzleCtx = NO;
@@ -2560,6 +2612,7 @@ static void hook_layoutSubviews(id self, SEL _cmd) {
             SEL encSel = NSSelectorFromString(@"encodedMoves");
             if ([game respondsToSelector:encSel]) {
                 gOnlineGame = game;
+                dumpMoveSelectors(game, @"game");
                 gOnlineSeen = [NSDate date];
                 gBotBoard = nil;
                 NSString *encoded = strGet(game, encSel);
@@ -2774,6 +2827,7 @@ static void hook_setEncodedMoves(id self, SEL _cmd, NSString *encoded) {
     @try {
         gOnlineGame = self;
         gOnlineSeen = [NSDate date];
+        dumpMoveSelectors(self, @"game");
         typedef NSString *(*StrGetter)(id, SEL);
         StrGetter strGet = (StrGetter)objc_msgSend;
         SEL iFenSel = NSSelectorFromString(@"initialFEN");
