@@ -1455,22 +1455,36 @@ static UITouch *chAcquireFakeTouch(void) {
     return t;
 }
 
+static void chSetKvc(id obj, NSString *key, id val) {
+    @try {
+        [obj setValue:val forKey:key];
+    } @catch (NSException *e) {
+        static NSMutableSet *sWarnedKeys = nil;
+        if (!sWarnedKeys) sWarnedKeys = [NSMutableSet set];
+        if (![sWarnedKeys containsObject:key]) {
+            [sWarnedKeys addObject:key];
+            dbg([NSString stringWithFormat:@"autoplay: UITouch key '%@' unsupported, skipped", key]);
+        }
+    }
+}
+
 static void chFakeTouchFire(CGPoint ptInWin, UIWindow *win, UITouchPhase phase) {
     @try {
         UITouch *touch = chAcquireFakeTouch();
-        [touch setValue:@(phase) forKey:@"_phase"];
-        [touch setValue:[NSValue valueWithCGPoint:ptInWin] forKey:@"_locationInWindow"];
-        [touch setValue:@1 forKey:@"_tapCount"];
-        [touch setValue:@(NSDate.date.timeIntervalSince1970) forKey:@"_timestamp"];
-        [touch setValue:win forKey:@"_window"];
-
+        chSetKvc(touch, @"_phase", @(phase));
+        chSetKvc(touch, @"_locationInWindow", [NSValue valueWithCGPoint:ptInWin]);
+        chSetKvc(touch, @"_tapCount", @1);
+        chSetKvc(touch, @"_timestamp", @(NSDate.date.timeIntervalSince1970));
+        chSetKvc(touch, @"_window", win);
         UIView *hit = [win hitTest:ptInWin withEvent:nil] ?: win;
-        [touch setValue:hit forKey:@"_view"];
-        [touch setValue:@YES forKey:@"_isFirstTouchForView"];
+        chSetKvc(touch, @"_view", hit);
+        chSetKvc(touch, @"_isFirstTouchForView", @YES);
+        chSetKvc(touch, @"_isTouching", @YES);
 
         UIEvent *event = [[UIEvent alloc] init];
         NSDictionary *touchesDict = [NSDictionary dictionaryWithObject:@[touch] forKey:(id<NSCopying>)win];
         [event setValue:touchesDict forKey:@"_touches"];
+        [(id)event setValue:@(phase == UITouchPhaseBegan ? YES : NO) forKey:@"_isFirstChangeEvent"];
         [[UIApplication sharedApplication] sendEvent:event];
     } @catch (NSException *e) {
         dbg([NSString stringWithFormat:@"autoplay touch err: %@", e.reason]);
