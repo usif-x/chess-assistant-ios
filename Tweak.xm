@@ -11,6 +11,7 @@
 #define PREF_ELO     @"ChessAssist_ELO"
 #define PREF_ENABLED @"ChessAssist_Enabled"
 #define PREF_SHOWN   @"ChessAssist_CreditShown"
+#define PREF_CREDIT2 @"ChessAssist_CreditShown2"
 #define PREF_WINPCT  @"ChessAssist_WinPct"
 #define PREF_ARROWS  @"ChessAssist_ArrowCount"
 #define PREF_ALPHA   @"ChessAssist_ArrowAlpha"
@@ -19,6 +20,7 @@
 #define PREF_QUALITY @"ChessAssist_TrackQuality"
 #define PREF_EVALLBL @"ChessAssist_EvalLabels"
 #define PREF_USEMAIA @"ChessAssist_UseMaia"
+#define PREF_AUTOPLAY @"ChessAssist_AutoPlay"
 #define DEFAULT_ELO  800
 
 static NSInteger gElo     = DEFAULT_ELO;
@@ -46,6 +48,7 @@ static NSString *gLastQualDone = nil;
 static double    gAccSum = 0;
 static int       gAccCount = 0;
 static NSString *gLastMoveQuality = nil;
+static BOOL      gPuzzleCtx = NO;
 
 enum { Q_BRILLIANT, Q_GREAT, Q_BEST, Q_EXCELLENT, Q_GOOD, Q_INACC, Q_MISS, Q_MISTAKE, Q_BLUNDER, Q_COUNT };
 static int    gQ[Q_COUNT] = {0};
@@ -53,6 +56,8 @@ static double gQual2ndWhite = 0;
 static BOOL   gQualHave2nd = NO;
 static BOOL gShowEvalLabels = YES;
 static BOOL gUseMaia = NO;
+static BOOL gAutoPlay = NO;
+static NSString *gLastAutoPlayed = nil;
 
 static NSMutableArray *gLog;
 static void dbg(NSString *msg) {
@@ -75,6 +80,7 @@ static void savePrefs(void) {
     [d setBool:gTrackQuality forKey:PREF_QUALITY];
     [d setBool:gShowEvalLabels forKey:PREF_EVALLBL];
     [d setBool:gUseMaia forKey:PREF_USEMAIA];
+    [d setBool:gAutoPlay forKey:PREF_AUTOPLAY];
     [d synchronize];
 }
 static void loadPrefs(void) {
@@ -89,6 +95,7 @@ static void loadPrefs(void) {
     if ([d objectForKey:PREF_QUALITY]) gTrackQuality = [d boolForKey:PREF_QUALITY];
     if ([d objectForKey:PREF_EVALLBL]) gShowEvalLabels = [d boolForKey:PREF_EVALLBL];
     if ([d objectForKey:PREF_USEMAIA]) gUseMaia = [d boolForKey:PREF_USEMAIA];
+    if ([d objectForKey:PREF_AUTOPLAY]) gAutoPlay = [d boolForKey:PREF_AUTOPLAY];
     if (gArrowCount < 1) gArrowCount = 1; if (gArrowCount > 3) gArrowCount = 3;
 }
 
@@ -709,7 +716,7 @@ static void showDebugLog(void) {
 static void showCredits(void) {
     UIAlertController *ac = [UIAlertController
         alertControllerWithTitle:@"Chess Assistant"
-        message:@"Made by @epicccccc\n\nYouTube: @epicccccc\nDiscord: itzzace."
+        message:@"Made by @epicccccc\n\nYouTube: @epicccccc\nDiscord: itzzace.\n\nSF18 + Auto Play by Yousseif\nGitHub: usif-x"
         preferredStyle:UIAlertControllerStyleAlert];
     [ac addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault
         handler:^(UIAlertAction *_) { hideMenu(); }]];
@@ -1265,6 +1272,8 @@ static int eloNearestIndex(NSInteger e) {
     NSMutableArray *swRows = [NSMutableArray array];
     [swRows addObject:[self rowTitle:@"Maia (human-like)" control:[self switchOn:gUseMaia sel:@selector(swMaia:)]]];
     [swRows addObject:[self sep]];
+    [swRows addObject:[self rowTitle:@"Auto Play" control:[self switchOn:gAutoPlay sel:@selector(swAutoPlay:)]]];
+    [swRows addObject:[self sep]];
     [swRows addObject:[self rowTitle:@"Move Analysis" control:[self switchOn:gTrackQuality sel:@selector(swAnalysis:)]]];
     [swRows addObject:[self sep]];
     [swRows addObject:[self rowTitle:@"Eval Labels" control:[self switchOn:gShowEvalLabels sel:@selector(swLabels:)]]];
@@ -1312,6 +1321,11 @@ static int eloNearestIndex(NSInteger e) {
 - (void)swLabels:(UISwitch *)s { gShowEvalLabels = s.on; savePrefs(); redrawArrows(); }
 - (void)swColor:(UISwitch *)s { gArrowEvalColor = s.on; savePrefs(); redrawArrows(); }
 - (void)swMaia:(UISwitch *)s { gUseMaia = s.on; savePrefs(); gLastFen = nil; }
+- (void)swAutoPlay:(UISwitch *)s {
+    gAutoPlay = s.on; savePrefs();
+    dbg([NSString stringWithFormat:@"Auto play: %@", gAutoPlay ? @"ON" : @"OFF"]);
+    if (!gAutoPlay) gLastAutoPlayed = nil;
+}
 - (void)enableTap { gEnabled = !gEnabled; savePrefs(); if (!gEnabled) clearArrow(); [self populate]; }
 - (void)debugTap {
     [self animateOut];
@@ -1407,6 +1421,125 @@ static BOOL isBoardOnScreen(UIView *v) {
     return (visArea / ownArea) > 0.5;
 }
 
+static BOOL detectBoardFlipped(UIView *board) {
+    if (gForcedFlip >= 0) return gForcedFlip ? YES : NO;
+    @try {
+        SEL flipSel = NSSelectorFromString(@"isFlipped");
+        if ([board respondsToSelector:flipSel]) {
+            typedef BOOL (*BoolGetter)(id, SEL);
+            return ((BoolGetter)objc_msgSend)(board, flipSel) ? YES : NO;
+        }
+        Ivar ivar = class_getInstanceVariable([board class], "_flipped");
+        if (!ivar) ivar = class_getInstanceVariable([board class], "isFlipped");
+        if (ivar) {
+            ptrdiff_t offset = ivar_getOffset(ivar);
+            return *(BOOL *)((char *)(__bridge void *)board + offset) ? YES : NO;
+        }
+    } @catch (NSException *e) {
+        dbg([NSString stringWithFormat:@"flip detect err: %@", e.reason]);
+    }
+    return NO;
+}
+
+#pragma mark - Auto Play (synthetic touches)
+
+static NSMutableArray *gFakeTouches = nil;
+
+static UITouch *chAcquireFakeTouch(void) {
+    if (!gFakeTouches) gFakeTouches = [NSMutableArray array];
+    UITouch *t = gFakeTouches.firstObject;
+    if (!t) {
+        t = [[UITouch alloc] init];
+        [gFakeTouches addObject:t];
+    }
+    return t;
+}
+
+static void chFakeTouchFire(CGPoint ptInWin, UIWindow *win, UITouchPhase phase) {
+    @try {
+        UITouch *touch = chAcquireFakeTouch();
+        [touch setValue:@(phase) forKey:@"_phase"];
+        [touch setValue:[NSValue valueWithCGPoint:ptInWin] forKey:@"_locationInWindow"];
+        [touch setValue:@1 forKey:@"_tapCount"];
+        [touch setValue:@(NSDate.date.timeIntervalSince1970) forKey:@"_timestamp"];
+        [touch setValue:win forKey:@"_window"];
+
+        UIView *hit = [win hitTest:ptInWin withEvent:nil] ?: win;
+        [touch setValue:hit forKey:@"_view"];
+        [touch setValue:@YES forKey:@"_isFirstTouchForView"];
+
+        UIEvent *event = [[UIEvent alloc] init];
+        NSDictionary *touchesDict = [NSDictionary dictionaryWithObject:@[touch] forKey:(id<NSCopying>)win];
+        [event setValue:touchesDict forKey:@"_touches"];
+        [[UIApplication sharedApplication] sendEvent:event];
+    } @catch (NSException *e) {
+        dbg([NSString stringWithFormat:@"autoplay touch err: %@", e.reason]);
+    }
+}
+
+static void playMoveOnBoard(NSString *uci, NSString *fenSnap) {
+    if (!gEnabled || !gAutoPlay) return;
+    if (![fenSnap isEqualToString:gLastFen]) return;
+
+    UIView *board = gDrawBoard ?: gBoardView ?: gBotBoard;
+    if (!board || !board.window || !isBoardOnScreen(board)) { dbg(@"autoplay: no board"); return; }
+
+    int fromSq = 0, toSq = 0;
+    if (!parseMoveUCI(uci, &fromSq, &toSq)) { dbg(@"autoplay: bad move"); return; }
+
+    BOOL flipped = detectBoardFlipped(board);
+    CGRect winRect = [board convertRect:board.bounds toView:nil];
+    UIWindow *win = board.window;
+
+    CGPoint fromLocal = squareToPoint(fromSq, board.bounds, flipped);
+    CGPoint toLocal   = squareToPoint(toSq,   board.bounds, flipped);
+    CGPoint fromWin = CGPointMake(winRect.origin.x + fromLocal.x, winRect.origin.y + fromLocal.y);
+    CGPoint toWin   = CGPointMake(winRect.origin.x + toLocal.x,   winRect.origin.y + toLocal.y);
+
+    BOOL promo = uci.length > 4;
+    CGPoint promoWin = CGPointZero;
+    if (promo) {
+        int qSq = (gSide == 1) ? toSq + 8 : toSq - 8;
+        if (qSq < 0 || qSq > 63) qSq = toSq;
+        CGPoint qLocal = squareToPoint(qSq, board.bounds, flipped);
+        promoWin = CGPointMake(winRect.origin.x + qLocal.x, winRect.origin.y + qLocal.y);
+    }
+
+    dbg([NSString stringWithFormat:@"autoplay: %@", uci]);
+    showQualityToast(@"▶ Auto Play", CH_ACCENT);
+
+    chFakeTouchFire(fromWin, win, UITouchPhaseBegan);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.07 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        chFakeTouchFire(fromWin, win, UITouchPhaseEnded);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (![fenSnap isEqualToString:gLastFen]) return;
+            chFakeTouchFire(toWin, win, UITouchPhaseBegan);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.07 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                chFakeTouchFire(toWin, win, UITouchPhaseEnded);
+                if (promo) {
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        chFakeTouchFire(promoWin, win, UITouchPhaseBegan);
+                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.07 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                            chFakeTouchFire(promoWin, win, UITouchPhaseEnded);
+                        });
+                    });
+                }
+            });
+        });
+    });
+}
+
+static void tryAutoPlay(NSString *bestmove, NSString *fenSnap) {
+    if (!gAutoPlay || !gEnabled) return;
+    if (gPuzzleCtx) return;
+    if (bestmove.length < 4) return;
+    if (!fenSnap.length || [fenSnap isEqualToString:gLastAutoPlayed]) return;
+    gLastAutoPlayed = [fenSnap copy];
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.9 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{ playMoveOnBoard(bestmove, fenSnap); });
+}
+
 static void applyEngineResult(NSString *bestmove, NSArray *extraMoves, BOOL isMate, int mateIn,
                               double rawEval, UIView *drawBoard) {
 
@@ -1437,27 +1570,7 @@ static void applyEngineResult(NSString *bestmove, NSArray *extraMoves, BOOL isMa
     UIView *board = drawBoard;
     if (!board || !board.window) board = gDrawBoard ?: gBoardView;
     if (board) {
-        BOOL flipped = NO;
-        if (gForcedFlip >= 0) {
-            flipped = gForcedFlip ? YES : NO;
-        } else {
-            @try {
-                SEL flipSel = NSSelectorFromString(@"isFlipped");
-                if ([board respondsToSelector:flipSel]) {
-                    typedef BOOL (*BoolGetter)(id, SEL);
-                    flipped = ((BoolGetter)objc_msgSend)(board, flipSel);
-                } else {
-                    Ivar ivar = class_getInstanceVariable([board class], "_flipped");
-                    if (!ivar) ivar = class_getInstanceVariable([board class], "isFlipped");
-                    if (ivar) {
-                        ptrdiff_t offset = ivar_getOffset(ivar);
-                        flipped = *(BOOL *)((char *)(__bridge void *)board + offset);
-                    }
-                }
-            } @catch (NSException *e) {
-                dbg([NSString stringWithFormat:@"flip detect err: %@", e.reason]);
-            }
-        }
+        BOOL flipped = detectBoardFlipped(board);
         double arrowEval = isMate ? (mateIn > 0 ? 99 : -99) : evalForUs;
         NSMutableArray *arrows = [NSMutableArray array];
         [arrows addObject:@{@"move": bestmove, @"eval": @(arrowEval), @"rank": @0,
@@ -1470,6 +1583,7 @@ static void applyEngineResult(NSString *bestmove, NSArray *extraMoves, BOOL isMa
             rank++;
         }
         drawArrowsOnBoard(arrows, board, flipped);
+        tryAutoPlay(bestmove, gLastFen);
     } else {
         dbg(@"no board ref for arrow");
     }
@@ -1977,7 +2091,6 @@ static NSString *gLastBotPlacement = nil;
 static int       gBotSide = 0;
 static char      gPrevBotBoard[8][8];
 static BOOL      gHavePrevBoard = NO;
-static BOOL      gPuzzleCtx = NO;
 
 static NSString *buildBotFEN(UIView *board, int *outUserColor) {
     const uint8_t *base = (const uint8_t *)(__bridge const void *)board;
@@ -2666,8 +2779,9 @@ static void hook_setEncodedMoves(id self, SEL _cmd, NSString *encoded) {
         setupFloatingButton();
 
         NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-        if (![d boolForKey:PREF_SHOWN]) {
+        if (![d boolForKey:PREF_SHOWN] || ![d boolForKey:PREF_CREDIT2]) {
             [d setBool:YES forKey:PREF_SHOWN];
+            [d setBool:YES forKey:PREF_CREDIT2];
             [d synchronize];
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
                            dispatch_get_main_queue(), ^{
@@ -2824,7 +2938,7 @@ static void installBoardHooks(void) {
     gLoadTime = [NSDate date];
     gOrigLayouts = [NSMutableDictionary dictionary];
     loadPrefs();
-    dbg(@"loaded v2.4 (SF16 + Maia3)");
+    dbg(@"loaded v2.4 (SF18 + Maia3)");
     EngineStart();
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{

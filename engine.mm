@@ -13,15 +13,11 @@
 #include <atomic>
 
 #include "bitboard.h"
-#include "endgame.h"
-#include "evaluate.h"
 #include "misc.h"
 #include "movegen.h"
 #include "position.h"
-#include "psqt.h"
 #include "search.h"
-#include "thread.h"
-#include "tt.h"
+#include "tune.h"
 #include "uci.h"
 
 using namespace Stockfish;
@@ -205,17 +201,11 @@ void engineThread() {
     static char arg0[] = "stockfish";
     char *argv[] = { arg0, nullptr };
 
-    CommandLine::init(1, argv);
-    UCI::init(Options);
-    Tune::init();
-    PSQT::init();
     Bitboards::init();
     Position::init();
-    Bitbases::init();
-    Endgames::init();
-    Threads.set(size_t(Options["Threads"]));
-    Search::clear();
-    Eval::NNUE::init();
+
+    static UCIEngine uci(1, argv);
+    Tune::init(uci.engine_options());
 
     gEngineReady.store(true);
 
@@ -223,7 +213,7 @@ void engineThread() {
     std::cin.rdbuf(&gIn);
     std::cout.rdbuf(&gOut);
 
-    UCI::loop(1, argv);
+    uci.loop();
 }
 
 }
@@ -255,7 +245,7 @@ extern "C" bool StockfishFenLegal(const char *fen) {
     Position pos;
     StateInfo si;
     try {
-        pos.set(std::string(fen), false, &si, Threads.main());
+        pos.set(std::string(fen), false, &si);
     } catch (...) {
         return false;
     }
@@ -275,7 +265,7 @@ extern "C" int StockfishLegalMoves(const char *fen, char *out, int maxMoves) {
     Position pos;
     StateInfo si;
     try {
-        pos.set(std::string(fen), false, &si, Threads.main());
+        pos.set(std::string(fen), false, &si);
     } catch (...) {
         return 0;
     }
@@ -283,7 +273,7 @@ extern "C" int StockfishLegalMoves(const char *fen, char *out, int maxMoves) {
     int n = 0;
     for (const auto &m : MoveList<LEGAL>(pos)) {
         if (n >= maxMoves) break;
-        std::string u = UCI::move(m, false);
+        std::string u = UCIEngine::move(m, false);
         std::strncpy(out + n * 6, u.c_str(), 5);
         out[n * 6 + 5] = '\0';
         n++;

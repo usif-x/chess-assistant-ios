@@ -3,7 +3,7 @@ Name: Chess Assistant
 Depends: mobilesubstrate
 Version: 2.4
 Architecture: iphoneos-arm64
-Description: On-device chess move assistant with bundled Stockfish 16 and Maia 3 engines.
+Description: On-device chess move assistant with bundled Stockfish 18 and Maia 3 engines.
              Human-like or best-move suggestions from 400 to 3500 ELO, arrows on the board.
 Maintainer: epic
 Author: epic

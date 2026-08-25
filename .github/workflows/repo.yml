@@ -46,7 +46,7 @@ jobs:
             echo "Codename: ios"
             echo "Architectures: iphoneos-arm64"
             echo "Components: main"
-            echo "Description: On-device Stockfish 16 + Maia 3 assistant for Chess.com"
+            echo "Description: On-device Stockfish 18 + Maia 3 assistant for Chess.com"
             echo "Date: $date_now"
           } > Release
           for algo in MD5Sum:md5sum SHA1:sha1sum SHA256:sha256sum; do
