@@ -1062,6 +1062,31 @@ static int eloNearestIndex(NSInteger e) {
     return best;
 }
 
+// Maia human-like range — the model is trained on games between ~800 and 2000 ELO
+static const NSInteger kMaiaLevels[] = {900,1000,1100,1200,1300,1400,1500,1600,1700,1800,1900,2000};
+static const int kMaiaLevelCount = 12;
+
+static const NSInteger *activeEloLevels(int *outCount) {
+    if (gUseMaia) { *outCount = kMaiaLevelCount; return kMaiaLevels; }
+    *outCount = kEloCount; return kEloLevels;
+}
+static int activeEloNearestIndex(NSInteger e) {
+    int c = 0; const NSInteger *l = activeEloLevels(&c);
+    int best = 0; long bd = LONG_MAX;
+    for (int i = 0; i < c; i++) { long d = labs((long)(l[i] - e)); if (d < bd) { bd = d; best = i; } }
+    return best;
+}
+static NSInteger activeEloForIndex(int i) {
+    int c = 0; const NSInteger *l = activeEloLevels(&c);
+    if (i < 0) i = 0; if (i >= c) i = c - 1;
+    return l[i];
+}
+static void clampGeloToActiveRange(void) {
+    int c = 0; const NSInteger *l = activeEloLevels(&c);
+    if (gElo < l[0]) gElo = l[0];
+    if (gElo > l[c-1]) gElo = l[c-1];
+}
+
 @interface CHSettingsPanel : UIView {
     UIView      *_card;
     UIStackView *_stack;
@@ -1384,16 +1409,21 @@ static int eloNearestIndex(NSInteger e) {
 
         // ---- ENGINE ----
         [_stack addArrangedSubview:[self sectionLabel:@"Engine"]];
+        int eloCnt = 0; const NSInteger *eloLvls = activeEloLevels(&eloCnt);
         _eloValue = [self lbl:[NSString stringWithFormat:@"%ld", (long)gElo] size:16 weight:UIFontWeightSemibold color:CH_ACCENT];
-        _eloTier  = [self lbl:eloTierName(gElo) size:12 weight:UIFontWeightRegular color:[UIColor colorWithWhite:0.6 alpha:1]];
+        NSString *tierText = gUseMaia
+            ? [NSString stringWithFormat:@"%@ · tuned for Maia (%ld–%ld)", eloTierName(gElo), (long)eloLvls[0], (long)eloLvls[eloCnt-1]]
+            : eloTierName(gElo);
+        _eloTier  = [self lbl:tierText size:12 weight:UIFontWeightRegular color:[UIColor colorWithWhite:0.6 alpha:1]];
         [_eloValue setContentHuggingPriority:1000 forAxis:UILayoutConstraintAxisHorizontal];
         UISlider *elo = [[UISlider alloc] init];
-        elo.minimumValue = 0; elo.maximumValue = kEloCount - 1; elo.value = eloNearestIndex(gElo);
+        elo.minimumValue = 0; elo.maximumValue = eloCnt - 1; elo.value = activeEloNearestIndex(gElo);
         elo.minimumTrackTintColor = CH_ACCENT;
         [elo addTarget:self action:@selector(eloSlide:) forControlEvents:UIControlEventValueChanged];
         [elo addTarget:self action:@selector(eloDone:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside];
+        NSString *strengthTitle = gUseMaia ? @"Strength (Human-like)" : @"Strength (ELO)";
         UIStackView *eloHdr = [[UIStackView alloc] initWithArrangedSubviews:@[
-            [self lbl:@"Strength (ELO)" size:15 weight:UIFontWeightMedium color:UIColor.whiteColor], _eloValue]];
+            [self lbl:strengthTitle size:15 weight:UIFontWeightMedium color:UIColor.whiteColor], _eloValue]];
         eloHdr.axis = UILayoutConstraintAxisHorizontal; eloHdr.distribution = UIStackViewDistributionFill;
         UIStackView *eloCol = [[UIStackView alloc] initWithArrangedSubviews:@[
             eloHdr, [self sliderRow:elo], _eloTier]];
@@ -1495,14 +1525,15 @@ static int eloNearestIndex(NSInteger e) {
 
 - (void)eloSlide:(UISlider *)s {
     int i = (int)roundf(s.value); s.value = i;
-    _eloValue.text = [NSString stringWithFormat:@"%ld%@", (long)kEloLevels[i], kEloLevels[i] > 1500 ? @" ⚠️" : @""];
-    _eloTier.text = eloTierName(kEloLevels[i]);
+    NSInteger e = activeEloForIndex(i);
+    _eloValue.text = [NSString stringWithFormat:@"%ld%@", (long)e, (!gUseMaia && e > 1500) ? @" ⚠️" : @""];
+    _eloTier.text = eloTierName(e);
 }
 - (void)eloDone:(UISlider *)s {
-    int i = (int)roundf(s.value);
-    gElo = kEloLevels[i]; savePrefs(); gLastFen = nil;
-    dbg([NSString stringWithFormat:@"ELO set to %ld", (long)gElo]);
-    if (gElo > 1500) {
+    gElo = activeEloForIndex((int)roundf(s.value));
+    savePrefs(); gLastFen = nil;
+    dbg([NSString stringWithFormat:@"ELO set to %ld (%@)", (long)gElo, gUseMaia ? @"maia" : @"stockfish"]);
+    if (!gUseMaia && gElo > 1500) {
         UIAlertController *w = [UIAlertController alertControllerWithTitle:@"⚠️ Ban Risk"
             message:@"Playing above ~1500 strength is much easier for Chess.com's fair-play system to detect and greatly increases your ban risk. Lower ELO is safer."
             preferredStyle:UIAlertControllerStyleAlert];
@@ -1523,7 +1554,14 @@ static int eloNearestIndex(NSInteger e) {
 - (void)swAnalysis:(UISwitch *)s { gTrackQuality = s.on; savePrefs(); if (!s.on) resetAccuracy(); [self populate]; }
 - (void)swLabels:(UISwitch *)s { gShowEvalLabels = s.on; savePrefs(); redrawArrows(); }
 - (void)swColor:(UISwitch *)s { gArrowEvalColor = s.on; savePrefs(); redrawArrows(); }
-- (void)swMaia:(UISwitch *)s { gUseMaia = s.on; savePrefs(); gLastFen = nil; }
+- (void)swMaia:(UISwitch *)s {
+    gUseMaia = s.on;
+    clampGeloToActiveRange();
+    savePrefs(); gLastFen = nil;
+    dbg([NSString stringWithFormat:@"Maia: %@ — strength range %@", gUseMaia ? @"ON" : @"OFF",
+         gUseMaia ? @"900–2000 (human-like)" : @"400–3500 (stockfish)"]);
+    [self populate];
+}
 - (void)swAutoPlay:(UISwitch *)s {
     gAutoPlay = s.on; savePrefs();
     dbg([NSString stringWithFormat:@"Auto play: %@", gAutoPlay ? @"ON" : @"OFF"]);
