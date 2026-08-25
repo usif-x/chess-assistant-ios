@@ -1845,7 +1845,7 @@ static void playMoveOnBoard(NSString *uci, NSString *fenSnap) {
 
 static void tryAutoPlay(NSString *bestmove, NSArray *extraMoves, NSString *fenSnap) {
     if (!gAutoPlay || !gEnabled) return;
-    if (gPuzzleCtx) return;
+    BOOL isPuzzle = gPuzzleCtx;
     if (bestmove.length < 4) return;
     if (!fenSnap.length || [fenSnap isEqualToString:gLastAutoPlayed]) return;
     gLastAutoPlayed = [fenSnap copy];
@@ -1857,7 +1857,7 @@ static void tryAutoPlay(NSString *bestmove, NSArray *extraMoves, NSString *fenSn
     if (delay > 6.0) delay = 6.0;
 
     NSString *chosen = bestmove;
-    if (extraMoves.count > 0 && arc4random_uniform(100) < 10) {
+    if (!isPuzzle && extraMoves.count > 0 && arc4random_uniform(100) < 10) {
         NSString *alt = extraMoves.firstObject[@"move"];
         if (alt.length >= 4 && ![alt isEqualToString:bestmove]) {
             chosen = alt;
@@ -1928,10 +1928,29 @@ static BOOL fenHasBothKings(NSString *fen) {
     return K == 1 && k == 1;
 }
 
+static void maybeGameEnded(NSString *fen) {
+    static NSString *sLastChecked = nil;
+    if (!fen.length || [fen isEqualToString:sLastChecked]) return;
+    sLastChecked = [fen copy];
+    @try {
+        char buf[256 * 6];
+        int n = StockfishLegalMoves([fen UTF8String], buf, 256);
+        if (n == 0) {
+            BOOL hadStats = gAccCount > 0;
+            resetAccuracy();
+            if (gUciSeq) [gUciSeq setString:@""];
+            gLastAutoPlayed = nil;
+            dbg(@"game ended — accuracy stats reset");
+            if (hadStats) showQualityToast(@"🏁 Game ended · stats reset", CH_ACCENT);
+        }
+    } @catch (NSException *e) {}
+}
+
 static void fetchMove(NSString *fen) {
     if (!gEnabled || !fen.length) return;
     if (!fenHasBothKings(fen)) return;
     if (!StockfishFenLegal([fen UTF8String])) { dbg(@"skip illegal pos"); return; }
+    maybeGameEnded(fen);
     if ([fen isEqualToString:gLastFen]) return;
 
     if (gFetching && gLastFetch && [[NSDate date] timeIntervalSinceDate:gLastFetch] > 5.0) {
