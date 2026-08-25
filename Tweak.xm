@@ -1108,6 +1108,8 @@ static int eloNearestIndex(NSInteger e) {
     UILabel *l = [[UILabel alloc] init];
     l.text = t; l.textColor = c; l.font = [UIFont systemFontOfSize:s weight:w];
     l.numberOfLines = 1;
+    NSLayoutConstraint *h = [l.heightAnchor constraintGreaterThanOrEqualToConstant:ceil(s * 1.35)];
+    h.priority = 999; h.active = YES;
     return l;
 }
 
@@ -1132,7 +1134,8 @@ static int eloNearestIndex(NSInteger e) {
     return box;
 }
 
-- (UILabel *)sectionLabel:(NSString *)t {    UILabel *l = [[UILabel alloc] init];
+- (UILabel *)sectionLabel:(NSString *)t {
+    UILabel *l = [[UILabel alloc] init];
     l.text = t.uppercaseString;
     l.font = [UIFont systemFontOfSize:11 weight:UIFontWeightSemibold];
     l.textColor = [UIColor colorWithWhite:1 alpha:0.45];
@@ -1142,6 +1145,8 @@ static int eloNearestIndex(NSInteger e) {
         NSKernAttributeName: @1.2
     }];
     l.attributedText = attr;
+    NSLayoutConstraint *h = [l.heightAnchor constraintGreaterThanOrEqualToConstant:16];
+    h.priority = 999; h.active = YES;
     return l;
 }
 
