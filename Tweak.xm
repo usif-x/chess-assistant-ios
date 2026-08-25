@@ -8,6 +8,8 @@
 #import "engine.h"
 #import "maia.h"
 
+#define CH_ACCENT [UIColor colorWithRed:0.49 green:0.66 blue:0.32 alpha:1.0]
+
 #define PREF_ELO     @"ChessAssist_ELO"
 #define PREF_ENABLED @"ChessAssist_Enabled"
 #define PREF_SHOWN   @"ChessAssist_CreditShown"
@@ -400,7 +402,7 @@ static NSString *decodeTCNToFEN(NSString *initialFEN, NSString *encoded) {
         applyMove(from, to, promo);
         char u[6] = { (char)('a' + from % 8), (char)('1' + from / 8),
                       (char)('a' + to % 8),   (char)('1' + to / 8),
-                      promo ? (char)tolower(promo) : 0, 0 };
+                      (char)(promo ? tolower((unsigned char)promo) : 0), 0 };
         [gUciSeq appendFormat:@"%s ", u];
     }
     return generateFEN();
@@ -977,7 +979,6 @@ static void showSettingsMenu(void) {
 }
 #endif
 
-#define CH_ACCENT [UIColor colorWithRed:0.49 green:0.66 blue:0.32 alpha:1.0]
 
 @interface CHPad : UILabel @end
 @implementation CHPad
