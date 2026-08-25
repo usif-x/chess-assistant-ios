@@ -1056,12 +1056,6 @@ static NSString *eloTierName(NSInteger e) {    if (e < 600)  return @"Novice";  
     if (e < 2800) return @"IM / GM";       if (e < 3200) return @"Super-GM";
     if (e < 3500) return @"Engine";        return @"Maximum";
 }
-static int eloNearestIndex(NSInteger e) {
-    int best = 0; long bd = LONG_MAX;
-    for (int i = 0; i < kEloCount; i++) { long d = labs((long)(kEloLevels[i] - e)); if (d < bd) { bd = d; best = i; } }
-    return best;
-}
-
 // Maia human-like range — the model is trained on games between ~800 and 2000 ELO
 static const NSInteger kMaiaLevels[] = {900,1000,1100,1200,1300,1400,1500,1600,1700,1800,1900,2000};
 static const int kMaiaLevelCount = 12;
