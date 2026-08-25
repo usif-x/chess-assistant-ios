@@ -1928,6 +1928,50 @@ static BOOL fenHasBothKings(NSString *fen) {
     return K == 1 && k == 1;
 }
 
+static NSArray<NSString *> *maiaCandidatePaths(void) {
+    NSMutableArray *c = [@[
+        @"/var/jb/Library/Application Support/Chess/maia3_5m.mlpackage",
+        @"/Library/Application Support/Chess/maia3_5m.mlpackage",
+    ] mutableCopy];
+    NSString *res = [[NSBundle mainBundle] resourcePath];
+    if (res) {
+        [c addObject:[res stringByAppendingPathComponent:@"maia3_5m.mlpackage"]];
+        [c addObject:[res stringByAppendingPathComponent:@"Chess/maia3_5m.mlpackage"]];
+    }
+    // resolve the real jailbreak root via /private/preboot in case /var/jb is unreadable from inside the app sandbox
+    @try {
+        NSArray *uuids = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:@"/private/preboot" error:nil];
+        for (NSString *uuid in uuids) {
+            NSString *base = [@"/private/preboot/" stringByAppendingString:uuid];
+            NSArray *subs = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:base error:nil];
+            for (NSString *s in subs) {
+                if (![s hasPrefix:@"jb-"]) continue;
+                [c addObject:[[base stringByAppendingPathComponent:s]
+                    stringByAppendingPathComponent:@"Library/Application Support/Chess/maia3_5m.mlpackage"]];
+            }
+        }
+    } @catch (NSException *e) {}
+    return c;
+}
+
+static BOOL sMaiaRetryDone = NO;
+
+static void ensureMaiaLoaded(void) {
+    if (MaiaAvailable()) return;
+    if (sMaiaRetryDone) return;
+    sMaiaRetryDone = YES;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        for (NSString *c in maiaCandidatePaths()) {
+            if ([[NSFileManager defaultManager] fileExistsAtPath:c]) {
+                BOOL ok = MaiaLoad([c UTF8String]);
+                dbg([NSString stringWithFormat:@"maia retry load %@: %@", ok ? @"OK" : @"FAIL", c]);
+                return;
+            }
+        }
+        dbg(@"maia retry: model still not found");
+    });
+}
+
 static void maybeGameEnded(NSString *fen) {
     static NSString *sLastChecked = nil;
     if (!fen.length || [fen isEqualToString:sLastChecked]) return;
@@ -1967,6 +2011,7 @@ static void fetchMove(NSString *fen) {
 
     BOOL stmWhite = ([fen rangeOfString:@" w "].location != NSNotFound);
 
+    if (gUseMaia) ensureMaiaLoaded();
     if (gUseMaia && MaiaAvailable()) {
         dbg([NSString stringWithFormat:@"maia elo%ld: %@", (long)gElo,
              [fen substringToIndex:MIN(fen.length, 45)]]);
@@ -3296,22 +3341,19 @@ static void installBoardHooks(void) {
     EngineStart();
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        NSString *res = [[NSBundle mainBundle] resourcePath];
-        NSMutableArray *candidates = [@[
-            @"/var/jb/Library/Application Support/Chess/maia3_5m.mlpackage",
-            @"/Library/Application Support/Chess/maia3_5m.mlpackage",
-        ] mutableCopy];
-        if (res) {
-            [candidates addObject:[res stringByAppendingPathComponent:@"maia3_5m.mlpackage"]];
-            [candidates addObject:[res stringByAppendingPathComponent:@"Chess/maia3_5m.mlpackage"]];
-            [candidates addObject:[res stringByAppendingPathComponent:@"Frameworks/Chess.dylib/maia3_5m.mlpackage"]];
-        }
+        NSArray *candidates = maiaCandidatePaths();
+        __block BOOL found = NO;
         for (NSString *c in candidates) {
             if ([[NSFileManager defaultManager] fileExistsAtPath:c]) {
+                found = YES;
                 BOOL ok = MaiaLoad([c UTF8String]);
                 dbg([NSString stringWithFormat:@"maia load %@: %@", ok ? @"OK" : @"FAIL", c]);
                 break;
             }
+        }
+        if (!found) {
+            dbg(@"maia: model NOT FOUND — searched:");
+            for (NSString *c in candidates) dbg([@"  " stringByAppendingString:c]);
         }
     });
 
