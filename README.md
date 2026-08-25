@@ -12,8 +12,16 @@ Everything runs locally on the device. No network requests, no move data leaves 
 - **Multi-line arrows** — show up to 3 candidate moves with per-move eval labels
 - **Eval display** — centipawn or win-% evaluation on the floating button
 - **Move Analysis** — grades each of your moves (Brilliant → Blunder), tracks accuracy % and a full breakdown in the settings panel
-- **Auto Play** — optional toggle that automatically plays the suggested best move right after your opponent moves
+- **Auto Play** — automatically plays the engine's best move after your opponent moves
+  - Adjustable move delay (0–5s) with random ±1s jitter so moves look human
+  - ~10% chance to play the second-best move for extra realism
+  - Puzzle auto-solve support (always plays the correct solution)
+- **Quick pause** — long-press the floating ♟ button to instantly pause/resume the assistant
+- **Opening names** 📖 — live detection of ~40 openings (Ruy Lopez, Najdorf, Caro-Kann, Queen's Gambit…) shown in the panel
+- **Copy FEN** — one tap copies the current position to your clipboard
+- **Auto stats reset** — accuracy stats, move grades and opening tracking reset automatically when a game ends (checkmate / stalemate detected on-device)
 - **Arrow styling** — color by eval / solid green, thin–thick shafts, adjustable opacity
+- **Ban-safe preset** — ⚡ one-tap button that applies safe settings (ELO 1000, Maia on, Auto Play off)
 - Works in online games, bot games, and puzzles
 
 ## Install
@@ -35,11 +43,11 @@ Grab the iOS 16 / 17 IPA from the [releases page](https://github.com/itzzace/che
 ## Usage
 
 1. Open Chess.com and start any game.
-2. Tap the floating ♟ button to open the settings panel.
-3. Set your ELO, toggle Maia / Auto Play / Move Analysis as desired.
-4. Arrows appear on the board when it's your turn.
+2. Tap the floating ♟ button to open the settings panel (long-press to pause/resume instantly).
+3. Set your ELO, toggle Maia / Auto Play / Move Analysis as desired — or hit ⚡ for the ban-safe preset.
+4. Arrows appear on the board when it's your turn; enable Auto Play and they'll be played for you.
 
-Tap **Debug Log** in the panel to view recent events (FEN detection, engine responses, hooks installed).
+Tap **Debug Log** in the panel to view recent events (FEN detection, engine responses, hooks installed). Tap **📋 FEN** to copy the current position.
 
 > ⚠️ Using an assistant violates Chess.com's fair-play policy and can get your account banned. Higher strengths (>~1500 ELO) are much easier to detect.
 
@@ -85,7 +93,7 @@ CI does all of this automatically — see [.github/workflows/build.yml](.github/
 ## Credits
 
 - Made by **@epicccccc** ([YouTube](https://youtube.com/@epicccccc), Discord: `itzzace.`)
-- **Yousseif** ([GitHub: usif-x](https://github.com/usif-x)) — Stockfish 18 upgrade, Auto Play feature & tweak updates
+- **Yousseif** ([GitHub: usif-x](https://github.com/usif-x)) — Stockfish 18 upgrade, Auto Play (with human-like timing & puzzle solving), quick pause, opening detection, Copy FEN, auto stats reset & tweak updates
 - [Stockfish](https://stockfishchess.org) — GPL v3 chess engine
 - [Maia 3](https://github.com/CSSLab/maia3) — human-like chess AI
 
