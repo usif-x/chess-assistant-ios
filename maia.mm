@@ -190,12 +190,12 @@ extern "C" bool MaiaLoadEmbedded(void) {
             return false;
 
         BOOL ok = [fm createFileAtPath:[dir stringByAppendingPathComponent:@"Manifest.json"]
-                              contents:[NSData dataWithBytes:mf length:mfLen] attributes:nil]
-               && [fm createFileAtPath:[[dir stringByAppendingPathComponent:@"Data/com.apple.CoreML"]
-                                        stringByAppendingPathComponent:@"model.mlmodel"]
-                              contents:[NSData dataWithBytes:md length:mdLen] attributes:nil]
-               && [fm createFileAtPath:[weightsDir stringByAppendingPathComponent:@"weight.bin"]
-                              contents:[NSData dataWithBytes:wg length:wLen] attributes:nil]];
+                              contents:[NSData dataWithBytes:mf length:mfLen] attributes:nil];
+        ok = ok && [fm createFileAtPath:[[dir stringByAppendingPathComponent:@"Data/com.apple.CoreML"]
+                                         stringByAppendingPathComponent:@"model.mlmodel"]
+                               contents:[NSData dataWithBytes:md length:mdLen] attributes:nil];
+        ok = ok && [fm createFileAtPath:[weightsDir stringByAppendingPathComponent:@"weight.bin"]
+                               contents:[NSData dataWithBytes:wg length:wLen] attributes:nil];
         if (!ok) return false;
 
         return MaiaLoadFromDir(dir);
