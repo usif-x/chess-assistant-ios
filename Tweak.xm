@@ -1476,16 +1476,29 @@ static void chFakeTouchFire(CGPoint ptInWin, UIWindow *win, UITouchPhase phase) 
         chSetKvc(touch, @"_tapCount", @1);
         chSetKvc(touch, @"_timestamp", @(NSDate.date.timeIntervalSince1970));
         chSetKvc(touch, @"_window", win);
-        UIView *hit = [win hitTest:ptInWin withEvent:nil] ?: win;
-        chSetKvc(touch, @"_view", hit);
-        chSetKvc(touch, @"_isFirstTouchForView", @YES);
-        chSetKvc(touch, @"_isTouching", @YES);
 
-        UIEvent *event = [[UIEvent alloc] init];
-        NSDictionary *touchesDict = [NSDictionary dictionaryWithObject:@[touch] forKey:(id<NSCopying>)win];
-        [event setValue:touchesDict forKey:@"_touches"];
-        [(id)event setValue:@(phase == UITouchPhaseBegan ? YES : NO) forKey:@"_isFirstChangeEvent"];
-        [[UIApplication sharedApplication] sendEvent:event];
+        UIView *target = [win hitTest:ptInWin withEvent:nil] ?: win;
+        chSetKvc(touch, @"_view", target);
+
+        static UIEvent *sCarrierEvent = nil;
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{ sCarrierEvent = [[UIEvent alloc] init]; });
+
+        NSSet *touches = [NSSet setWithObject:touch];
+        switch (phase) {
+            case UITouchPhaseBegan:
+                [target touchesBegan:touches withEvent:sCarrierEvent];
+                break;
+            case UITouchPhaseMoved:
+                [target touchesMoved:touches withEvent:sCarrierEvent];
+                break;
+            case UITouchPhaseCancelled:
+                [target touchesCancelled:touches withEvent:sCarrierEvent];
+                break;
+            default:
+                [target touchesEnded:touches withEvent:sCarrierEvent];
+                break;
+        }
     } @catch (NSException *e) {
         dbg([NSString stringWithFormat:@"autoplay touch err: %@", e.reason]);
     }
