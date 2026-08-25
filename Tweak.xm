@@ -21,6 +21,7 @@
 #define PREF_EVALLBL @"ChessAssist_EvalLabels"
 #define PREF_USEMAIA @"ChessAssist_UseMaia"
 #define PREF_AUTOPLAY @"ChessAssist_AutoPlay"
+#define PREF_APDELAY  @"ChessAssist_AutoPlayDelay"
 #define DEFAULT_ELO  800
 
 static NSInteger gElo     = DEFAULT_ELO;
@@ -57,6 +58,7 @@ static BOOL   gQualHave2nd = NO;
 static BOOL gShowEvalLabels = YES;
 static BOOL gUseMaia = NO;
 static BOOL gAutoPlay = NO;
+static double gAutoPlayDelay = 0.15;
 static NSString *gLastAutoPlayed = nil;
 
 static NSMutableArray *gLog;
@@ -81,6 +83,7 @@ static void savePrefs(void) {
     [d setBool:gShowEvalLabels forKey:PREF_EVALLBL];
     [d setBool:gUseMaia forKey:PREF_USEMAIA];
     [d setBool:gAutoPlay forKey:PREF_AUTOPLAY];
+    [d setDouble:gAutoPlayDelay forKey:PREF_APDELAY];
     [d synchronize];
 }
 static void loadPrefs(void) {
@@ -96,6 +99,11 @@ static void loadPrefs(void) {
     if ([d objectForKey:PREF_EVALLBL]) gShowEvalLabels = [d boolForKey:PREF_EVALLBL];
     if ([d objectForKey:PREF_USEMAIA]) gUseMaia = [d boolForKey:PREF_USEMAIA];
     if ([d objectForKey:PREF_AUTOPLAY]) gAutoPlay = [d boolForKey:PREF_AUTOPLAY];
+    if ([d objectForKey:PREF_APDELAY]) {
+        gAutoPlayDelay = [d doubleForKey:PREF_APDELAY];
+        if (gAutoPlayDelay < 0) gAutoPlayDelay = 0;
+        if (gAutoPlayDelay > 5.0) gAutoPlayDelay = 5.0;
+    }
     if (gArrowCount < 1) gArrowCount = 1; if (gArrowCount > 3) gArrowCount = 3;
 }
 
@@ -979,6 +987,7 @@ static int eloNearestIndex(NSInteger e) {
     UIStackView *_stack;
     UILabel     *_eloValue;
     UILabel     *_eloTier;
+    UILabel     *_apDelayValue;
 }
 @end
 
@@ -1025,6 +1034,20 @@ static int eloNearestIndex(NSInteger e) {
     s.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
     [s.heightAnchor constraintEqualToConstant:1].active = YES;
     return s;
+}
+
+- (UILabel *)sectionLabel:(NSString *)t {
+    UILabel *l = [[UILabel alloc] init];
+    l.text = t.uppercaseString;
+    l.font = [UIFont systemFontOfSize:11 weight:UIFontWeightSemibold];
+    l.textColor = [UIColor colorWithWhite:1 alpha:0.45];
+    NSMutableAttributedString *attr = [[NSMutableAttributedString alloc] initWithString:l.text attributes:@{
+        NSFontAttributeName: l.font,
+        NSForegroundColorAttributeName: l.textColor,
+        NSKernAttributeName: @1.2
+    }];
+    l.attributedText = attr;
+    return l;
 }
 
 - (UIView *)group:(UIView *)inner {
@@ -1234,6 +1257,7 @@ static int eloNearestIndex(NSInteger e) {
 
     [_stack addArrangedSubview:[self statsCard]];
 
+    [_stack addArrangedSubview:[self sectionLabel:@"Engine"]];
     _eloValue = [self lbl:[NSString stringWithFormat:@"%ld", (long)gElo] size:16 weight:UIFontWeightSemibold color:CH_ACCENT];
     _eloTier  = [self lbl:eloTierName(gElo) size:12 weight:UIFontWeightRegular color:[UIColor colorWithWhite:0.6 alpha:1]];
     [_eloValue setContentHuggingPriority:1000 forAxis:UILayoutConstraintAxisHorizontal];
@@ -1248,6 +1272,8 @@ static int eloNearestIndex(NSInteger e) {
     UIStackView *eloCol = [[UIStackView alloc] initWithArrangedSubviews:@[eloHdr, elo, _eloTier]];
     eloCol.axis = UILayoutConstraintAxisVertical; eloCol.spacing = 4;
     [_stack addArrangedSubview:[self group:eloCol]];
+
+    [_stack addArrangedSubview:[self sectionLabel:@"Display"]];
 
     UISegmentedControl *evalSeg = [[UISegmentedControl alloc] initWithItems:@[@"Centipawn", @"Win %"]];
     evalSeg.selectedSegmentIndex = gShowWinPct ? 1 : 0; [self styleSeg:evalSeg];
@@ -1269,10 +1295,10 @@ static int eloNearestIndex(NSInteger e) {
     grp.axis = UILayoutConstraintAxisVertical; grp.spacing = 10;
     [_stack addArrangedSubview:[self group:grp]];
 
+    [_stack addArrangedSubview:[self sectionLabel:@"Features"]];
+
     NSMutableArray *swRows = [NSMutableArray array];
     [swRows addObject:[self rowTitle:@"Maia (human-like)" control:[self switchOn:gUseMaia sel:@selector(swMaia:)]]];
-    [swRows addObject:[self sep]];
-    [swRows addObject:[self rowTitle:@"Auto Play" control:[self switchOn:gAutoPlay sel:@selector(swAutoPlay:)]]];
     [swRows addObject:[self sep]];
     [swRows addObject:[self rowTitle:@"Move Analysis" control:[self switchOn:gTrackQuality sel:@selector(swAnalysis:)]]];
     [swRows addObject:[self sep]];
@@ -1283,12 +1309,36 @@ static int eloNearestIndex(NSInteger e) {
     sw.axis = UILayoutConstraintAxisVertical; sw.spacing = 10;
     [_stack addArrangedSubview:[self group:sw]];
 
+    [_stack addArrangedSubview:[self sectionLabel:@"Auto Play"]];
+
+    _apDelayValue = [self lbl:[NSString stringWithFormat:@"%.1fs", gAutoPlayDelay]
+                          size:15 weight:UIFontWeightSemibold color:CH_ACCENT];
+    [_apDelayValue setContentHuggingPriority:1000 forAxis:UILayoutConstraintAxisHorizontal];
+    UISlider *apDelay = [[UISlider alloc] init];
+    apDelay.minimumValue = 0.0; apDelay.maximumValue = 5.0;
+    apDelay.value = gAutoPlayDelay; apDelay.minimumTrackTintColor = CH_ACCENT;
+    [apDelay addTarget:self action:@selector(apDelaySlide:) forControlEvents:UIControlEventValueChanged];
+    [apDelay addTarget:self action:@selector(apDelayDone:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside];
+    UIStackView *apCol = [[UIStackView alloc] initWithArrangedSubviews:@[
+        [self rowTitle:@"Auto Play" control:[self switchOn:gAutoPlay sel:@selector(swAutoPlay:)]],
+        [self sep],
+        [self rowTitle:@"Move Delay" control:_apDelayValue],
+        apDelay,
+        [self lbl:@"Wait time after opponent's move before auto playing." size:11 weight:UIFontWeightRegular color:[UIColor colorWithWhite:0.5 alpha:1]]]];
+    apCol.axis = UILayoutConstraintAxisVertical; apCol.spacing = 10;
+    [_stack addArrangedSubview:[self group:apCol]];
+
+    [_stack addArrangedSubview:[self sectionLabel:@"Controls"]];
+
     [_stack addArrangedSubview:[self bigBtn:(gEnabled ? @"Pause Assistant" : @"Enable Assistant")
                                       color:(gEnabled ? [UIColor systemRedColor] : CH_ACCENT)
                                         sel:@selector(enableTap)]];
+    UIButton *prefBtn = [self smallBtn:@"⚡ Preferred Settings (Ban-Safe)" sel:@selector(preferredTap)];
+    prefBtn.backgroundColor = [CH_ACCENT colorWithAlphaComponent:0.25];
+    [_stack addArrangedSubview:prefBtn];
     UIStackView *foot = [[UIStackView alloc] initWithArrangedSubviews:@[
         [self smallBtn:@"Debug Log" sel:@selector(debugTap)],
-        [self smallBtn:@"Credits" sel:@selector(creditsTap)]]];
+        [self smallBtn:@"Credits" sel:@selector(creditsTap)]];
     foot.axis = UILayoutConstraintAxisHorizontal; foot.distribution = UIStackViewDistributionFillEqually; foot.spacing = 10;
     [_stack addArrangedSubview:foot];
 }
@@ -1325,6 +1375,31 @@ static int eloNearestIndex(NSInteger e) {
     gAutoPlay = s.on; savePrefs();
     dbg([NSString stringWithFormat:@"Auto play: %@", gAutoPlay ? @"ON" : @"OFF"]);
     if (!gAutoPlay) gLastAutoPlayed = nil;
+}
+- (void)apDelaySlide:(UISlider *)s {
+    double v = round(s.value * 10.0) / 10.0; s.value = v;
+    _apDelayValue.text = [NSString stringWithFormat:@"%.1fs", v];
+}
+- (void)apDelayDone:(UISlider *)s {
+    gAutoPlayDelay = round(s.value * 10.0) / 10.0;
+    savePrefs();
+    dbg([NSString stringWithFormat:@"Auto play delay: %.1fs", gAutoPlayDelay]);
+}
+- (void)preferredTap {
+    gArrowCount   = 3;
+    gArrowAlpha   = 0.3;
+    gShowWinPct   = YES;
+    gArrowThick   = 0.7;
+    gUseMaia      = YES;
+    gAutoPlay     = NO;
+    gElo          = 1000;
+    gLastFen      = nil;
+    gLastAutoPlayed = nil;
+    savePrefs();
+    resetAccuracy();
+    dbg(@"preset: preferred (ban-safe) applied");
+    showQualityToast(@"⚡ Ban-Safe Preset", CH_ACCENT);
+    [self populate];
 }
 - (void)enableTap { gEnabled = !gEnabled; savePrefs(); if (!gEnabled) clearArrow(); [self populate]; }
 - (void)debugTap {
@@ -1585,17 +1660,17 @@ static void playMoveOnBoard(NSString *uci, NSString *fenSnap) {
     showQualityToast(@"▶ Auto Play", CH_ACCENT);
 
     chFakeTouchFire(fromWin, win, UITouchPhaseBegan);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.07 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.03 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         chFakeTouchFire(fromWin, win, UITouchPhaseEnded);
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.09 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             if (![fenSnap isEqualToString:gLastFen]) return;
             chFakeTouchFire(toWin, win, UITouchPhaseBegan);
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.07 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.03 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 chFakeTouchFire(toWin, win, UITouchPhaseEnded);
                 if (promo) {
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.18 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                         chFakeTouchFire(promoWin, win, UITouchPhaseBegan);
-                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.07 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.03 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                             chFakeTouchFire(promoWin, win, UITouchPhaseEnded);
                         });
                     });
@@ -1612,7 +1687,7 @@ static void tryAutoPlay(NSString *bestmove, NSString *fenSnap) {
     if (!fenSnap.length || [fenSnap isEqualToString:gLastAutoPlayed]) return;
     gLastAutoPlayed = [fenSnap copy];
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.9 * NSEC_PER_SEC)),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(gAutoPlayDelay * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{ playMoveOnBoard(bestmove, fenSnap); });
 }
 
