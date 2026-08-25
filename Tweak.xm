@@ -60,6 +60,8 @@ static BOOL gUseMaia = NO;
 static BOOL gAutoPlay = NO;
 static double gAutoPlayDelay = 0.15;
 static NSString *gLastAutoPlayed = nil;
+static NSMutableString *gUciSeq = nil;
+static BOOL gSkipNextTap = NO;
 
 static NSMutableArray *gLog;
 static void dbg(NSString *msg) {
@@ -374,6 +376,8 @@ static int tcnIndex(unichar c) {
 
 static NSString *decodeTCNToFEN(NSString *initialFEN, NSString *encoded) {
     parseFEN(initialFEN);
+    if (!gUciSeq) gUciSeq = [NSMutableString string];
+    [gUciSeq setString:@""];
     if (!encoded.length) return generateFEN();
     for (NSUInteger i = 0; i + 1 < encoded.length; i += 2) {
         int fromIdx = tcnIndex([encoded characterAtIndex:i]);
@@ -394,6 +398,10 @@ static NSString *decodeTCNToFEN(NSString *initialFEN, NSString *encoded) {
             to = (from >= 48) ? (56 + toFile) : (0 + toFile);
         }
         applyMove(from, to, promo);
+        char u[6] = { (char)('a' + from % 8), (char)('1' + from / 8),
+                      (char)('a' + to % 8),   (char)('1' + to / 8),
+                      promo ? (char)tolower(promo) : 0, 0 };
+        [gUciSeq appendFormat:@"%s ", u];
     }
     return generateFEN();
 }
@@ -580,10 +588,12 @@ static void showSettingsMenu(void);
 @interface CHAssistBtnHandler : NSObject
 + (void)floatBtnTapped;
 + (void)handlePan:(UIPanGestureRecognizer *)pan;
++ (void)handleLongPress:(UILongPressGestureRecognizer *)lp;
 @end
 
 @implementation CHAssistBtnHandler
 + (void)floatBtnTapped {
+    if (gSkipNextTap) { gSkipNextTap = NO; return; }
     showSettingsMenu();
 }
 + (void)handlePan:(UIPanGestureRecognizer *)pan {
@@ -592,6 +602,16 @@ static void showSettingsMenu(void);
     CGPoint translation = [pan translationInView:container];
     btn.center = CGPointMake(btn.center.x + translation.x, btn.center.y + translation.y);
     [pan setTranslation:CGPointZero inView:container];
+}
++ (void)handleLongPress:(UILongPressGestureRecognizer *)lp {
+    if (lp.state != UIGestureRecognizerStateBegan) return;
+    gSkipNextTap = YES;
+    gEnabled = !gEnabled;
+    savePrefs();
+    if (!gEnabled) clearArrow();
+    dbg([NSString stringWithFormat:@"quick toggle: %@", gEnabled ? @"ON" : @"OFF"]);
+    showQualityToast(gEnabled ? @"▶ Assistant On" : @"⏸ Assistant Paused",
+                     gEnabled ? CH_ACCENT : [UIColor systemRedColor]);
 }
 @end
 
@@ -643,6 +663,11 @@ static void setupFloatingButton(void) {
 
     UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:[CHAssistBtnHandler class] action:@selector(handlePan:)];
     [gFloatBtn addGestureRecognizer:pan];
+
+    UILongPressGestureRecognizer *lp = [[UILongPressGestureRecognizer alloc]
+        initWithTarget:[CHAssistBtnHandler class] action:@selector(handleLongPress:)];
+    lp.minimumPressDuration = 0.45;
+    [gFloatBtn addGestureRecognizer:lp];
 
     [gBtnWin.rootViewController.view addSubview:gFloatBtn];
     gBtnWin.hidden = NO;
@@ -967,8 +992,62 @@ static void showSettingsMenu(void) {
 
 static const NSInteger kEloLevels[] = {400,600,800,1000,1200,1400,1600,1800,2000,2200,2400,2800,3200,3500};
 static const int kEloCount = 14;
-static NSString *eloTierName(NSInteger e) {
-    if (e < 600)  return @"Novice";        if (e < 800)  return @"Beginner";
+static NSString *ecoName(void) {
+    if (!gUciSeq || !gUciSeq.length) return nil;
+    static NSDictionary<NSString *, NSString *> *sTable = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        sTable = @{
+            @"e2e4 e7e5":                                   @"Open Game",
+            @"e2e4 e7e5 g1f3 b8c6 f1b5":                    @"Ruy Lopez",
+            @"e2e4 e7e5 g1f3 b8c6 f1b5 a7a6":               @"Ruy Lopez, Closed",
+            @"e2e4 e7e5 g1f3 b8c6 f1b5 g8f6":               @"Ruy Lopez, Berlin",
+            @"e2e4 e7e5 g1f3 b8c6 f1c4":                    @"Italian Game",
+            @"e2e4 e7e5 g1f3 b8c6 d2d4":                    @"Scotch Game",
+            @"e2e4 e7e5 g1f3 g8f6":                         @"Petrov Defense",
+            @"e2e4 e7e5 g1f3 f8c5":                         @"Giuoco Piano",
+            @"e2e4 e7e5 b1c3":                              @"Vienna Game",
+            @"e2e4 e7e5 f2f4":                              @"King's Gambit",
+            @"e2e4 c7c5":                                   @"Sicilian Defense",
+            @"e2e4 c7c5 c2c3":                              @"Sicilian, Alapin",
+            @"e2e4 c7c5 b1c3":                              @"Sicilian, Closed",
+            @"e2e4 c7c5 g2g3":                              @"Sicilian, Fianchetto",
+            @"e2e4 c7c5 g1f3 b8c6":                         @"Sicilian, Old",
+            @"e2e4 c7c5 g1f3 d7d6":                         @"Sicilian, Open",
+            @"e2e4 c7c5 g1f3 e7e6":                         @"Sicilian, French",
+            @"e2e4 c7c5 g1f3 d7d6 d2d4 c5d4 g1d4 g8f6 b1c3 a7a6": @"Sicilian, Najdorf",
+            @"e2e4 e7e6":                                   @"French Defense",
+            @"e2e4 c7c6":                                   @"Caro-Kann Defense",
+            @"e2e4 d7d6":                                   @"Pirc Defense",
+            @"e2e4 d7d5":                                   @"Scandinavian Defense",
+            @"e2e4 g8f6":                                   @"Alekhine Defense",
+            @"d2d4 d7d5":                                   @"Closed Game",
+            @"d2d4 d7d5 c2c4":                              @"Queen's Gambit",
+            @"d2d4 d7d5 c2c4 e7e6":                         @"Queen's Gambit Declined",
+            @"d2d4 d7d5 c2c4 c7c6":                         @"Slav Defense",
+            @"d2d4 d7d5 c2c4 d5c4":                         @"Queen's Gambit Accepted",
+            @"d2d4 g8f6":                                   @"Indian Defense",
+            @"d2d4 g8f6 c2c4 e7e6":                         @"Indian, Queen's",
+            @"d2d4 g8f6 c2c4 g7g6":                         @"King's Indian / Grünfeld",
+            @"d2d4 g8f6 g1f3 g7g6":                         @"King's Indian Attack",
+            @"d2d4 f7f5":                                   @"Dutch Defense",
+            @"c2c4":                                        @"English Opening",
+            @"c2c4 e7e5":                                   @"English, Reversed Sicilian",
+            @"c2c4 g8f6":                                   @"English, Anglo-Indian",
+            @"g1f3 d7d5 c2c4":                              @"Réti Opening",
+            @"f2f4":                                        @"Bird's Opening",
+        };
+    });
+    NSString *seq = [gUciSeq stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    __block NSString *best = nil;
+    __block NSUInteger bestLen = 0;
+    [sTable enumerateKeysAndObjectsUsingBlock:^(NSString *k, NSString *v, BOOL *stop) {
+        if ([seq hasPrefix:k] && k.length > bestLen) { best = v; bestLen = k.length; }
+    }];
+    return best;
+}
+
+static NSString *eloTierName(NSInteger e) {    if (e < 600)  return @"Novice";        if (e < 800)  return @"Beginner";
     if (e < 1000) return @"Casual";        if (e < 1200) return @"Improving";
     if (e < 1400) return @"Intermediate";  if (e < 1600) return @"Club";
     if (e < 1800) return @"Strong Club";   if (e < 2000) return @"Expert";
@@ -1283,6 +1362,15 @@ static int eloNearestIndex(NSInteger e) {
         [_stack addArrangedSubview:subLbl];
         [_stack setCustomSpacing:12 afterView:hdr];
 
+        NSString *eco = ecoName();
+        if (eco.length) {
+            UILabel *ecoLbl = [self lbl:[NSString stringWithFormat:@"📖 %@", eco]
+                                   size:12 weight:UIFontWeightSemibold
+                                  color:[UIColor colorWithRed:0.55 green:0.75 blue:0.95 alpha:1]];
+            [_stack addArrangedSubview:ecoLbl];
+            [_stack setCustomSpacing:10 afterView:subLbl];
+        }
+
         UIView *stats = [self statsCard];
         [_stack addArrangedSubview:stats];
 
@@ -1378,6 +1466,7 @@ static int eloNearestIndex(NSInteger e) {
         prefBtn.backgroundColor = [CH_ACCENT colorWithAlphaComponent:0.25];
         [_stack addArrangedSubview:prefBtn];
         UIStackView *foot = [[UIStackView alloc] initWithArrangedSubviews:@[
+            [self smallBtn:@"📋 FEN" sel:@selector(copyFenTap)],
             [self smallBtn:@"Debug Log" sel:@selector(debugTap)],
             [self smallBtn:@"Credits" sel:@selector(creditsTap)]]];
         foot.axis = UILayoutConstraintAxisHorizontal; foot.distribution = UIStackViewDistributionFillEqually; foot.spacing = 10;
@@ -1431,6 +1520,16 @@ static int eloNearestIndex(NSInteger e) {
     gAutoPlayDelay = round(s.value * 10.0) / 10.0;
     savePrefs();
     dbg([NSString stringWithFormat:@"Auto play delay: %.1fs", gAutoPlayDelay]);
+}
+- (void)copyFenTap {
+    NSString *fen = gLastFen;
+    if (!fen.length) {
+        showQualityToast(@"No position yet", [UIColor systemOrangeColor]);
+        return;
+    }
+    [UIPasteboard generalPasteboard].string = fen;
+    showQualityToast(@"FEN copied", CH_ACCENT);
+    dbg([NSString stringWithFormat:@"copied FEN: %@", fen]);
 }
 - (void)preferredTap {
     gArrowCount   = 3;
@@ -1727,15 +1826,30 @@ static void playMoveOnBoard(NSString *uci, NSString *fenSnap) {
     });
 }
 
-static void tryAutoPlay(NSString *bestmove, NSString *fenSnap) {
+static void tryAutoPlay(NSString *bestmove, NSArray *extraMoves, NSString *fenSnap) {
     if (!gAutoPlay || !gEnabled) return;
     if (gPuzzleCtx) return;
     if (bestmove.length < 4) return;
     if (!fenSnap.length || [fenSnap isEqualToString:gLastAutoPlayed]) return;
     gLastAutoPlayed = [fenSnap copy];
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(gAutoPlayDelay * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{ playMoveOnBoard(bestmove, fenSnap); });
+    double base = MAX(gAutoPlayDelay, 0.5);
+    double jit = ((double)arc4random_uniform(2001) / 1000.0) - 1.0; // -1.0 .. +1.0
+    double delay = base + jit;
+    if (delay < 0.2) delay = 0.2;
+    if (delay > 6.0) delay = 6.0;
+
+    NSString *chosen = bestmove;
+    if (extraMoves.count > 0 && arc4random_uniform(100) < 10) {
+        NSString *alt = extraMoves.firstObject[@"move"];
+        if (alt.length >= 4 && ![alt isEqualToString:bestmove]) {
+            chosen = alt;
+            dbg([NSString stringWithFormat:@"autoplay alt move: %@", alt]);
+        }
+    }
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{ playMoveOnBoard(chosen, fenSnap); });
 }
 
 static void applyEngineResult(NSString *bestmove, NSArray *extraMoves, BOOL isMate, int mateIn,
@@ -1781,7 +1895,7 @@ static void applyEngineResult(NSString *bestmove, NSArray *extraMoves, BOOL isMa
             rank++;
         }
         drawArrowsOnBoard(arrows, board, flipped);
-        tryAutoPlay(bestmove, gLastFen);
+        tryAutoPlay(bestmove, extraMoves, gLastFen);
     } else {
         dbg(@"no board ref for arrow");
     }
@@ -2398,6 +2512,7 @@ static NSString *buildBotFEN(UIView *board, int *outUserColor) {
         } else if ([pl isEqualToString:startpos]) {
             gBotSide = 0;
             if (gAccCount > 0) resetAccuracy();
+            [gUciSeq setString:@""];
         } else if (gHavePrevBoard) {
 
             int whiteMoved = 0, blackMoved = 0;
