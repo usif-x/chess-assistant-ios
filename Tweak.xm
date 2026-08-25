@@ -1338,7 +1338,7 @@ static int eloNearestIndex(NSInteger e) {
     [_stack addArrangedSubview:prefBtn];
     UIStackView *foot = [[UIStackView alloc] initWithArrangedSubviews:@[
         [self smallBtn:@"Debug Log" sel:@selector(debugTap)],
-        [self smallBtn:@"Credits" sel:@selector(creditsTap)]];
+        [self smallBtn:@"Credits" sel:@selector(creditsTap)]]];
     foot.axis = UILayoutConstraintAxisHorizontal; foot.distribution = UIStackViewDistributionFillEqually; foot.spacing = 10;
     [_stack addArrangedSubview:foot];
 }
