@@ -261,8 +261,6 @@ static void analyzeUserMove(NSString *oppFen) {
             double acc = moveAccuracy(evalToWinPct(beforeUs, NO, 0), evalToWinPct(afterUs, NO, 0));
             gAccSum += acc; gAccCount++;
             gLastMoveQuality = [NSString stringWithFormat:@"%@ (-%.2f)", qName(cat), lossCp / 100.0];
-            dbg([NSString stringWithFormat:@"move: %@ | acc %.0f%% | game %.0f%%",
-                 gLastMoveQuality, acc, gAccCount ? gAccSum / gAccCount : 0]);
             showQualityToast([NSString stringWithFormat:@"%@ %@", qSymbol(cat), qName(cat)], qColor(cat));
         });
     });
@@ -569,7 +567,6 @@ static void drawArrowsOnBoard(NSArray *arrows, UIView *board, BOOL flipped) {
         gArrowFlipped = flipped;
         drawArrowsCore(board, flipped);
         if (gArrowLayers.count)
-            dbg([NSString stringWithFormat:@"arrows: %lu", (unsigned long)gArrowLayers.count]);
 
         for (double delay = 0.4; delay <= 2.0; delay += 0.5) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
@@ -1505,13 +1502,6 @@ static void clampGeloToActiveRange(void) {
         [_stack addArrangedSubview:foot];
 
         [_scroll setContentOffset:CGPointZero];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            NSMutableString *dump = [NSMutableString string];
-            for (UIView *v in _stack.arrangedSubviews) {
-                [dump appendFormat:@"[%@ %@] ", NSStringFromClass([v class]), NSStringFromCGRect(v.frame)];
-            }
-            dbg([NSString stringWithFormat:@"PANEL LAYOUT scroll=%@ stack=%@\n%@", NSStringFromCGRect(_scroll.frame), NSStringFromCGRect(_stack.frame), dump]);
-        });
     } @catch (NSException *e) {
         dbg([NSString stringWithFormat:@"PANEL ERR: %@ — %@", e.name, e.reason]);
     }
@@ -1714,55 +1704,6 @@ static BOOL detectBoardFlipped(UIView *board) {
 #pragma mark - Auto Play (synthetic touches)
 
 static NSMutableArray *gFakeTouches = nil;
-
-static NSMutableSet *sDumpedClasses = nil;
-
-static void dumpMoveSelectors(id obj, NSString *tag) {
-    if (!obj) return;
-    Class c = object_getClass(obj);
-    if (!c) return;
-    if (!sDumpedClasses) sDumpedClasses = [NSMutableSet set];
-    NSString *key = [tag stringByAppendingString:NSStringFromClass(c)];
-    if ([sDumpedClasses containsObject:key]) return;
-    [sDumpedClasses addObject:key];
-
-    NSArray *keywords = @[@"move", @"play", @"tap", @"touch", @"piece",
-                          @"select", @"square", @"drag", @"click", @"perform"];
-    unsigned int n = 0;
-    Method *methods = class_copyMethodList(c, &n);
-    if (methods) {
-        NSMutableArray *hits = [NSMutableArray array];
-        for (unsigned int i = 0; i < n && hits.count < 50; i++) {
-            NSString *name = NSStringFromSelector(method_getName(methods[i]));
-            NSString *lower = name.lowercaseString;
-            for (NSString *k in keywords) {
-                if ([lower containsString:k]) { [hits addObject:name]; break; }
-            }
-        }
-        free(methods);
-        if (hits.count)
-            dbg([NSString stringWithFormat:@"DUMP[%@] %@ (%lu): %@", tag, NSStringFromClass(c),
-                 (unsigned long)hits.count, [hits componentsJoinedByString:@", "]]);
-    }
-
-    Class meta = object_getClass(c);
-    unsigned int cn = 0;
-    Method *cmethods = class_copyMethodList(meta, &cn);
-    if (cmethods) {
-        NSMutableArray *hits = [NSMutableArray array];
-        for (unsigned int i = 0; i < cn && hits.count < 30; i++) {
-            NSString *name = NSStringFromSelector(method_getName(cmethods[i]));
-            NSString *lower = name.lowercaseString;
-            for (NSString *k in keywords) {
-                if ([lower containsString:k]) { [hits addObject:name]; break; }
-            }
-        }
-        free(cmethods);
-        if (hits.count)
-            dbg([NSString stringWithFormat:@"DUMP[%@] +(%@): %@", tag,
-                 NSStringFromClass(c), [hits componentsJoinedByString:@", "]]);
-    }
-}
 
 static UITouch *chAcquireFakeTouch(void) {
     if (!gFakeTouches) gFakeTouches = [NSMutableArray array];
@@ -2101,8 +2042,6 @@ static void fetchMove(NSString *fen) {
     }
 
     NSInteger depth = eloToDepth(gElo);
-    dbg([NSString stringWithFormat:@"fetch d%ld: %@", (long)depth,
-         [fen substringToIndex:MIN(fen.length, 45)]]);
 
     int multipv = gTrackQuality ? MAX((int)gArrowCount, 2) : (int)gArrowCount;
     EngineGo([fen UTF8String], (int)depth, (int)gElo, multipv,
@@ -2353,8 +2292,6 @@ static void enginePollTick(void) {
 
             if (gMyColor >= 0 && gMyColor != gSide) { analyzeUserMove(sfn); return; }
 
-            dbg([NSString stringWithFormat:@"SWIFT FEN: %@",
-                 [sfn substringToIndex:MIN(sfn.length, 55)]]);
 
             if (!gBoardView || ![(UIView *)gBoardView window]) {
                 for (UIWindow *win in [UIApplication sharedApplication].windows) {
@@ -2378,8 +2315,6 @@ static void enginePollTick(void) {
 
                 if (gMyColor >= 0 && gMyColor != gSide) { analyzeUserMove(decoded); return; }
 
-                dbg([NSString stringWithFormat:@"SWIFT TCN→FEN: %@",
-                     [decoded substringToIndex:MIN(decoded.length, 55)]]);
 
                 if (!gBoardView || ![(UIView *)gBoardView window]) {
                     for (UIWindow *win in [UIApplication sharedApplication].windows) {
@@ -2400,7 +2335,6 @@ static void enginePollTick(void) {
         gEngineCtrl = gHookedEngine;
         dbg([NSString stringWithFormat:@"ENGINE: via hook %@",
              NSStringFromClass([gHookedEngine class])]);
-        dumpMoveSelectors(gHookedEngine, @"engine");
     }
 
     if (!gEngineCtrl) {
@@ -2412,7 +2346,6 @@ static void enginePollTick(void) {
                 gEngineCtrl = found;
                 dbg([NSString stringWithFormat:@"ENGINE: found %@",
                      NSStringFromClass([found class])]);
-                dumpMoveSelectors(found, @"engine");
                 break;
             }
         }
@@ -2433,11 +2366,6 @@ static void enginePollTick(void) {
                 if ([result isKindOfClass:[NSString class]] && result.length > 10
                     && [result containsString:@"/"]) {
                     fen = result;
-                    static NSString *sLoggedSel = nil;
-                    if (![selName isEqualToString:sLoggedSel]) {
-                        sLoggedSel = selName;
-                        dbg([NSString stringWithFormat:@"ENGINE FEN via %@", selName]);
-                    }
                     break;
                 }
             } @catch (NSException *e) {}
@@ -2452,16 +2380,9 @@ static void enginePollTick(void) {
             if ([result isKindOfClass:[NSString class]] && result.length > 10
                 && [result containsString:@"/"]) {
                 fen = result;
-                static BOOL sLoggedBrute = NO;
-                if (!sLoggedBrute) { sLoggedBrute = YES; dbg(@"ENGINE FEN via brute getCurrentFen"); }
             }
         } @catch (NSException *e) {
 
-            static BOOL sLoggedFail = NO;
-            if (!sLoggedFail) {
-                sLoggedFail = YES;
-                dbg([NSString stringWithFormat:@"ENGINE no FEN method works: %@", e.reason]);
-            }
             gEngineCtrl = nil;
             return;
         }
@@ -2474,8 +2395,6 @@ static void enginePollTick(void) {
 
     if (gMyColor >= 0 && gMyColor != gSide) return;
 
-    dbg([NSString stringWithFormat:@"ENGINE FEN: %@",
-         [fen substringToIndex:MIN(fen.length, 55)]]);
 
     if (!gBoardView || ![(UIView *)gBoardView window]) {
         for (UIWindow *win in [UIApplication sharedApplication].windows) {
@@ -2674,7 +2593,6 @@ static BOOL processBotBoard(UIView *board) {
         return NO;
     if (!isBoardOnScreen(board)) return NO;
     gBotBoard = board;
-    dumpMoveSelectors(board, @"board");
 
     BOOL inBotGame = NO;
     gPuzzleCtx = NO;
@@ -2701,7 +2619,6 @@ static BOOL processBotBoard(UIView *board) {
     static NSString *sLastBotFen = nil;
     if (![fen isEqualToString:sLastBotFen]) {
         sLastBotFen = [fen copy];
-        dbg([NSString stringWithFormat:@"BOT FEN: %@", fen]);
     }
     if (gBotSide == userColor) {
         fetchMove(fen);
@@ -2833,7 +2750,6 @@ static BOOL drivePuzzle(UIView *board) {
     static NSString *sLastPuzzleFen = nil;
     if (![pf isEqualToString:sLastPuzzleFen]) {
         sLastPuzzleFen = [pf copy];
-        dbg([NSString stringWithFormat:@"PUZZLE FEN: %@", pf]);
     }
     gForcedFlip = -1;
     gDrawBoard = board;
@@ -2880,16 +2796,11 @@ static void hook_layoutSubviews(id self, SEL _cmd) {
         typedef NSInteger (*IntGetter)(id, SEL);
         IntGetter getInt = (IntGetter)objc_msgSend;
 
-        static NSInteger gLastRawColor = -99;
         SEL colorSel = NSSelectorFromString(@"myPieceColor");
         if ([self respondsToSelector:colorSel]) {
 
             gOnlineDrawBoard = boardSelf;
             NSInteger raw = getInt(self, colorSel);
-            if (raw != gLastRawColor) {
-                gLastRawColor = raw;
-                dbg([NSString stringWithFormat:@"myPieceColor raw=%ld", (long)raw]);
-            }
 
             if (raw == 1) gMyColor = 0;
             else if (raw == 2) gMyColor = 1;
@@ -2911,15 +2822,8 @@ static void hook_layoutSubviews(id self, SEL _cmd) {
                 NSInteger newColor = flipped ? 1 : 0;
                 if (newColor != gMyColor) {
                     gMyColor = newColor;
-                    dbg([NSString stringWithFormat:@"color via isFlipped: %@",
-                         flipped ? @"black" : @"white"]);
                 }
             } else {
-                static BOOL gLoggedNoColor = NO;
-                if (!gLoggedNoColor) {
-                    gLoggedNoColor = YES;
-                    dbg(@"WARN: board has no myPieceColor or isFlipped");
-                }
             }
         }
 
@@ -2930,11 +2834,8 @@ static void hook_layoutSubviews(id self, SEL _cmd) {
         UIResponder *resp = [(UIView *)self nextResponder];
         id game = nil;
         int chainDepth = 0;
-        static NSString *gLoggedChainVC = nil;
-        NSMutableString *chainLog = [NSMutableString string];
 
         while (resp && chainDepth < 20) {
-            [chainLog appendFormat:@"%@→", NSStringFromClass([resp class])];
             for (NSString *selName in gameSelNames) {
                 SEL sel = NSSelectorFromString(selName);
                 if ([resp respondsToSelector:sel]) {
@@ -2942,12 +2843,6 @@ static void hook_layoutSubviews(id self, SEL _cmd) {
                         id obj = getObj(resp, sel);
                         if (obj) {
                             game = obj;
-                            NSString *vcName = NSStringFromClass([resp class]);
-                            if (![vcName isEqualToString:gLoggedChainVC]) {
-                                gLoggedChainVC = vcName;
-                                dbg([NSString stringWithFormat:@"game via .%@ on %@ (class: %@)",
-                                     selName, vcName, NSStringFromClass([obj class])]);
-                            }
                             break;
                         }
                     } @catch (NSException *e) {}
@@ -2964,7 +2859,6 @@ static void hook_layoutSubviews(id self, SEL _cmd) {
             SEL encSel = NSSelectorFromString(@"encodedMoves");
             if ([game respondsToSelector:encSel]) {
                 gOnlineGame = game;
-                dumpMoveSelectors(game, @"game");
                 gOnlineSeen = [NSDate date];
                 gBotBoard = nil;
                 NSString *encoded = strGet(game, encSel);
@@ -2991,12 +2885,6 @@ static void hook_layoutSubviews(id self, SEL _cmd) {
                         gLastEncoded = [hfen copy];
                         parseFEN(hfen);
                         currentFEN = hfen;
-                        static BOOL gLoggedHk = NO;
-                        if (!gLoggedHk) {
-                            gLoggedHk = YES;
-                            dbg([NSString stringWithFormat:@"FEN via hooked %@",
-                                 NSStringFromClass([gHookedEngine class])]);
-                        }
                     }
                 } @catch (NSException *e) {}
             }
@@ -3040,12 +2928,6 @@ static void hook_layoutSubviews(id self, SEL _cmd) {
                             gLastEncoded = [fen copy];
                             parseFEN(fen);
                             currentFEN = fen;
-                            static BOOL gLoggedEngine = NO;
-                            if (!gLoggedEngine) {
-                                gLoggedEngine = YES;
-                                dbg([NSString stringWithFormat:@"FEN via getCurrentFen on %@",
-                                     NSStringFromClass([target class])]);
-                            }
                             break;
                         }
                     } @catch (NSException *e) {}
@@ -3065,12 +2947,6 @@ static void hook_layoutSubviews(id self, SEL _cmd) {
                                 gLastEncoded = [fen copy];
                                 parseFEN(fen);
                                 currentFEN = fen;
-                                static BOOL gLoggedCtrl = NO;
-                                if (!gLoggedCtrl) {
-                                    gLoggedCtrl = YES;
-                                    dbg([NSString stringWithFormat:@"FEN via .%@.getCurrentFen on %@",
-                                         cp, NSStringFromClass([target class])]);
-                                }
                             }
                         }
 
@@ -3115,12 +2991,6 @@ static void hook_layoutSubviews(id self, SEL _cmd) {
                                 gLastEncoded = [fen copy];
                                 parseFEN(fen);
                                 currentFEN = fen;
-                                static NSString *gLoggedFenSrc = nil;
-                                NSString *src = [NSString stringWithFormat:@".%@ on %@", selName, NSStringFromClass([target class])];
-                                if (![src isEqualToString:gLoggedFenSrc]) {
-                                    gLoggedFenSrc = src;
-                                    dbg([NSString stringWithFormat:@"FEN via %@", src]);
-                                }
                                 break;
                             }
                         } @catch (NSException *e) {}
@@ -3131,20 +3001,9 @@ static void hook_layoutSubviews(id self, SEL _cmd) {
         }
 
         if (!game && !currentFEN) {
-            static NSString *gLastFailChain = nil;
-            static NSDate *gLastFailLog = nil;
-            BOOL shouldLog = NO;
-            if (![chainLog isEqualToString:gLastFailChain]) shouldLog = YES;
-            if (gLastFailLog && [[NSDate date] timeIntervalSinceDate:gLastFailLog] > 10.0) shouldLog = YES;
-            if (!gLastFailLog) shouldLog = YES;
-            if ([chainLog containsString:@"Puzzle"] && [NSStringFromClass([self class]) hasPrefix:@"CH"]) {
+            if ([NSStringFromClass([self class]) hasPrefix:@"CH"] || [NSStringFromClass([self class]) containsString:@"Puzzle"]) {
                 gPuzzleBoard = (UIView *)self;
                 if (drivePuzzle((UIView *)self)) return;
-            }
-            if (shouldLog && chainLog.length) {
-                gLastFailChain = [chainLog copy];
-                gLastFailLog = [NSDate date];
-                dbg([NSString stringWithFormat:@"no game/FEN in chain: %@", chainLog]);
             }
             return;
         }
@@ -3158,7 +3017,6 @@ static void hook_layoutSubviews(id self, SEL _cmd) {
                 dispatch_async(dispatch_get_main_queue(), ^{ clearArrow(); });
                 return;
             }
-            dbg([NSString stringWithFormat:@"FEN: %@", [currentFEN substringToIndex:MIN(currentFEN.length, 55)]]);
             gForcedFlip = -1;
 
             gDrawBoard = gOnlineDrawBoard ?: resolveDrawBoard(boardSelf);
@@ -3179,7 +3037,6 @@ static void hook_setEncodedMoves(id self, SEL _cmd, NSString *encoded) {
     @try {
         gOnlineGame = self;
         gOnlineSeen = [NSDate date];
-        dumpMoveSelectors(self, @"game");
         typedef NSString *(*StrGetter)(id, SEL);
         StrGetter strGet = (StrGetter)objc_msgSend;
         SEL iFenSel = NSSelectorFromString(@"initialFEN");
@@ -3190,7 +3047,6 @@ static void hook_setEncodedMoves(id self, SEL _cmd, NSString *encoded) {
         if (currentFEN.length) {
             parseFEN(currentFEN);
             if (gMyColor >= 0 && gMyColor != gSide) return;
-            dbg([NSString stringWithFormat:@"FEN(setter): %@", [currentFEN substringToIndex:MIN(currentFEN.length, 55)]]);
             gForcedFlip = -1;
             dispatch_async(dispatch_get_main_queue(), ^{ fetchMove(currentFEN); });
         }
@@ -3371,7 +3227,7 @@ static void installBoardHooks(void) {
     gLoadTime = [NSDate date];
     gOrigLayouts = [NSMutableDictionary dictionary];
     loadPrefs();
-    dbg(@"loaded v2.4 (SF18 + Maia3)");
+    dbg(@"loaded v2.5.1 (SF18 + Maia3)");
     EngineStart();
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
