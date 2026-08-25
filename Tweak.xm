@@ -988,6 +988,7 @@ static int eloNearestIndex(NSInteger e) {
     UILabel     *_eloValue;
     UILabel     *_eloTier;
     UILabel     *_apDelayValue;
+    UILabel     *_opValue;
 }
 @end
 
@@ -1036,15 +1037,17 @@ static int eloNearestIndex(NSInteger e) {
     return s;
 }
 
-- (UIView *)padded:(UIView *)v top:(CGFloat)t bottom:(CGFloat)b {
+- (UIView *)sliderRow:(UISlider *)s {
+    s.translatesAutoresizingMaskIntoConstraints = NO;
+    NSLayoutConstraint *h = [s.heightAnchor constraintEqualToConstant:32];
+    h.priority = 999; h.active = YES;
     UIView *box = [[UIView alloc] init];
-    v.translatesAutoresizingMaskIntoConstraints = NO;
-    [box addSubview:v];
+    [box addSubview:s];
     [NSLayoutConstraint activateConstraints:@[
-        [v.topAnchor constraintEqualToAnchor:box.topAnchor constant:t],
-        [v.bottomAnchor constraintEqualToAnchor:box.bottomAnchor constant:-b],
-        [v.leadingAnchor constraintEqualToAnchor:box.leadingAnchor],
-        [v.trailingAnchor constraintEqualToAnchor:box.trailingAnchor]]];
+        [s.topAnchor constraintEqualToAnchor:box.topAnchor constant:2],
+        [s.bottomAnchor constraintEqualToAnchor:box.bottomAnchor constant:-2],
+        [s.leadingAnchor constraintEqualToAnchor:box.leadingAnchor],
+        [s.trailingAnchor constraintEqualToAnchor:box.trailingAnchor]]];
     return box;
 }
 
@@ -1257,121 +1260,131 @@ static int eloNearestIndex(NSInteger e) {
 }
 
 - (void)populate {
-    for (UIView *v in [_stack.arrangedSubviews copy]) { [_stack removeArrangedSubview:v]; [v removeFromSuperview]; }
+    @try {
+        for (UIView *v in [_stack.arrangedSubviews copy]) { [_stack removeArrangedSubview:v]; [v removeFromSuperview]; }
 
-    UIButton *x = [UIButton buttonWithType:UIButtonTypeSystem];
-    [x setTitle:@"✕" forState:UIControlStateNormal];
-    x.titleLabel.font = [UIFont systemFontOfSize:20];
-    [x setTitleColor:[UIColor colorWithWhite:0.7 alpha:1] forState:UIControlStateNormal];
-    [x addTarget:self action:@selector(closeTap) forControlEvents:UIControlEventTouchUpInside];
-    [x setContentHuggingPriority:1000 forAxis:UILayoutConstraintAxisHorizontal];
-    UIStackView *hdr = [[UIStackView alloc] initWithArrangedSubviews:@[
-        [self lbl:@"Chess Assistant" size:22 weight:UIFontWeightBold color:UIColor.whiteColor], x]];
-    hdr.axis = UILayoutConstraintAxisHorizontal; hdr.alignment = UIStackViewAlignmentCenter;
-    [_stack addArrangedSubview:hdr];
+        UIButton *x = [UIButton buttonWithType:UIButtonTypeSystem];
+        [x setTitle:@"✕" forState:UIControlStateNormal];
+        x.titleLabel.font = [UIFont systemFontOfSize:20];
+        [x setTitleColor:[UIColor colorWithWhite:0.7 alpha:1] forState:UIControlStateNormal];
+        [x addTarget:self action:@selector(closeTap) forControlEvents:UIControlEventTouchUpInside];
+        [x setContentHuggingPriority:1000 forAxis:UILayoutConstraintAxisHorizontal];
+        UIStackView *hdr = [[UIStackView alloc] initWithArrangedSubviews:@[
+            [self lbl:@"Chess Assistant" size:22 weight:UIFontWeightBold color:UIColor.whiteColor], x]];
+        hdr.axis = UILayoutConstraintAxisHorizontal; hdr.alignment = UIStackViewAlignmentCenter;
+        [_stack addArrangedSubview:hdr];
 
-    NSString *sub = [NSString stringWithFormat:@"%@ · Depth %ld · %@ · Playing %@",
-        gEnabled ? @"Active" : @"Paused",
-        (long)eloToDepth(gElo),
-        gUseMaia ? @"Maia" : @"Stockfish",
-        gMyColor == 0 ? @"White" : (gMyColor == 1 ? @"Black" : @"—")];
-    UILabel *subLbl = [self lbl:sub size:12 weight:UIFontWeightMedium color:[UIColor colorWithWhite:0.72 alpha:1]];
-    [_stack addArrangedSubview:subLbl];
-    [_stack setCustomSpacing:14 afterView:hdr];
-    [_stack setCustomSpacing:16 afterView:subLbl];
+        NSString *sub = [NSString stringWithFormat:@"%@ · Depth %ld · %@ · Playing %@",
+            gEnabled ? @"Active" : @"Paused",
+            (long)eloToDepth(gElo),
+            gUseMaia ? @"Maia" : @"Stockfish",
+            gMyColor == 0 ? @"White" : (gMyColor == 1 ? @"Black" : @"—")];
+        UILabel *subLbl = [self lbl:sub size:13 weight:UIFontWeightSemibold color:[UIColor colorWithWhite:0.75 alpha:1]];
+        [_stack addArrangedSubview:subLbl];
+        [_stack setCustomSpacing:12 afterView:hdr];
 
-    UIView *stats = [self statsCard];
-    [_stack addArrangedSubview:stats];
-    [_stack setCustomSpacing:16 afterView:stats];
+        UIView *stats = [self statsCard];
+        [_stack addArrangedSubview:stats];
 
-    [_stack addArrangedSubview:[self sectionLabel:@"Engine"]];
-    _eloValue = [self lbl:[NSString stringWithFormat:@"%ld", (long)gElo] size:16 weight:UIFontWeightSemibold color:CH_ACCENT];
-    _eloTier  = [self lbl:eloTierName(gElo) size:12 weight:UIFontWeightRegular color:[UIColor colorWithWhite:0.6 alpha:1]];
-    [_eloValue setContentHuggingPriority:1000 forAxis:UILayoutConstraintAxisHorizontal];
-    UISlider *elo = [[UISlider alloc] init];
-    elo.minimumValue = 0; elo.maximumValue = kEloCount - 1; elo.value = eloNearestIndex(gElo);
-    elo.minimumTrackTintColor = CH_ACCENT;
-    [elo addTarget:self action:@selector(eloSlide:) forControlEvents:UIControlEventValueChanged];
-    [elo addTarget:self action:@selector(eloDone:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside];
-    UIStackView *eloHdr = [[UIStackView alloc] initWithArrangedSubviews:@[
-        [self lbl:@"Strength (ELO)" size:15 weight:UIFontWeightMedium color:UIColor.whiteColor], _eloValue]];
-    eloHdr.axis = UILayoutConstraintAxisHorizontal; eloHdr.distribution = UIStackViewDistributionFill;
-    UIStackView *eloCol = [[UIStackView alloc] initWithArrangedSubviews:@[
-        eloHdr, [self padded:elo top:4 bottom:2], _eloTier]];
-    eloCol.axis = UILayoutConstraintAxisVertical; eloCol.spacing = 6;
-    [_stack addArrangedSubview:[self group:eloCol]];
+        // ---- ENGINE ----
+        [_stack addArrangedSubview:[self sectionLabel:@"Engine"]];
+        _eloValue = [self lbl:[NSString stringWithFormat:@"%ld", (long)gElo] size:16 weight:UIFontWeightSemibold color:CH_ACCENT];
+        _eloTier  = [self lbl:eloTierName(gElo) size:12 weight:UIFontWeightRegular color:[UIColor colorWithWhite:0.6 alpha:1]];
+        [_eloValue setContentHuggingPriority:1000 forAxis:UILayoutConstraintAxisHorizontal];
+        UISlider *elo = [[UISlider alloc] init];
+        elo.minimumValue = 0; elo.maximumValue = kEloCount - 1; elo.value = eloNearestIndex(gElo);
+        elo.minimumTrackTintColor = CH_ACCENT;
+        [elo addTarget:self action:@selector(eloSlide:) forControlEvents:UIControlEventValueChanged];
+        [elo addTarget:self action:@selector(eloDone:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside];
+        UIStackView *eloHdr = [[UIStackView alloc] initWithArrangedSubviews:@[
+            [self lbl:@"Strength (ELO)" size:15 weight:UIFontWeightMedium color:UIColor.whiteColor], _eloValue]];
+        eloHdr.axis = UILayoutConstraintAxisHorizontal; eloHdr.distribution = UIStackViewDistributionFill;
+        UIStackView *eloCol = [[UIStackView alloc] initWithArrangedSubviews:@[
+            eloHdr, [self sliderRow:elo], _eloTier]];
+        eloCol.axis = UILayoutConstraintAxisVertical; eloCol.spacing = 6;
+        [_stack addArrangedSubview:[self group:eloCol]];
 
-    [_stack addArrangedSubview:[self sectionLabel:@"Display"]];
+        // ---- DISPLAY ----
+        [_stack addArrangedSubview:[self sectionLabel:@"Display"]];
 
-    UISegmentedControl *evalSeg = [[UISegmentedControl alloc] initWithItems:@[@"Centipawn", @"Win %"]];
-    evalSeg.selectedSegmentIndex = gShowWinPct ? 1 : 0; [self styleSeg:evalSeg];
-    [evalSeg addTarget:self action:@selector(evalSeg:) forControlEvents:UIControlEventValueChanged];
-    UISegmentedControl *arrSeg = [[UISegmentedControl alloc] initWithItems:@[@"1", @"2", @"3"]];
-    arrSeg.selectedSegmentIndex = MIN(2, MAX(0, (int)gArrowCount - 1)); [self styleSeg:arrSeg];
-    [arrSeg addTarget:self action:@selector(arrSeg:) forControlEvents:UIControlEventValueChanged];
-    UISegmentedControl *thickSeg = [[UISegmentedControl alloc] initWithItems:@[@"Thin", @"Med", @"Thick"]];
-    thickSeg.selectedSegmentIndex = gArrowThick < 0.85 ? 0 : (gArrowThick > 1.2 ? 2 : 1); [self styleSeg:thickSeg];
-    [thickSeg addTarget:self action:@selector(thickSeg:) forControlEvents:UIControlEventValueChanged];
-    UISlider *op = [[UISlider alloc] init];
-    op.minimumValue = 0.3; op.maximumValue = 1.0; op.value = gArrowAlpha; op.minimumTrackTintColor = CH_ACCENT;
-    [op addTarget:self action:@selector(opSlide:) forControlEvents:UIControlEventValueChanged];
-    UIView *opRow = [self rowTitle:@"Opacity" control:nil];
-    UIStackView *grp = [[UIStackView alloc] initWithArrangedSubviews:@[
-        [self rowTitle:@"Evaluation" control:evalSeg], [self sep],
-        [self rowTitle:@"Arrows" control:arrSeg], [self sep],
-        [self rowTitle:@"Thickness" control:thickSeg], [self sep],
-        opRow, [self padded:op top:2 bottom:2]]];
-    grp.axis = UILayoutConstraintAxisVertical; grp.spacing = 10;
-    [grp setCustomSpacing:4 afterView:[grp.arrangedSubviews lastObject]];
-    [_stack addArrangedSubview:[self group:grp]];
+        UISegmentedControl *evalSeg = [[UISegmentedControl alloc] initWithItems:@[@"Centipawn", @"Win %"]];
+        evalSeg.selectedSegmentIndex = gShowWinPct ? 1 : 0; [self styleSeg:evalSeg];
+        [evalSeg addTarget:self action:@selector(evalSeg:) forControlEvents:UIControlEventValueChanged];
+        UISegmentedControl *arrSeg = [[UISegmentedControl alloc] initWithItems:@[@"1", @"2", @"3"]];
+        arrSeg.selectedSegmentIndex = MIN(2, MAX(0, (int)gArrowCount - 1)); [self styleSeg:arrSeg];
+        [arrSeg addTarget:self action:@selector(arrSeg:) forControlEvents:UIControlEventValueChanged];
+        UISegmentedControl *thickSeg = [[UISegmentedControl alloc] initWithItems:@[@"Thin", @"Med", @"Thick"]];
+        thickSeg.selectedSegmentIndex = gArrowThick < 0.85 ? 0 : (gArrowThick > 1.2 ? 2 : 1); [self styleSeg:thickSeg];
+        [thickSeg addTarget:self action:@selector(thickSeg:) forControlEvents:UIControlEventValueChanged];
 
-    [_stack addArrangedSubview:[self sectionLabel:@"Features"]];
+        _opValue = [self lbl:[NSString stringWithFormat:@"%d%%", (int)round(gArrowAlpha * 100)]
+                         size:15 weight:UIFontWeightSemibold color:CH_ACCENT];
+        [_opValue setContentHuggingPriority:1000 forAxis:UILayoutConstraintAxisHorizontal];
+        UISlider *op = [[UISlider alloc] init];
+        op.minimumValue = 0.3; op.maximumValue = 1.0; op.value = gArrowAlpha; op.minimumTrackTintColor = CH_ACCENT;
+        [op addTarget:self action:@selector(opSlide:) forControlEvents:UIControlEventValueChanged];
 
-    NSMutableArray *swRows = [NSMutableArray array];
-    [swRows addObject:[self rowTitle:@"Maia (human-like)" control:[self switchOn:gUseMaia sel:@selector(swMaia:)]]];
-    [swRows addObject:[self sep]];
-    [swRows addObject:[self rowTitle:@"Move Analysis" control:[self switchOn:gTrackQuality sel:@selector(swAnalysis:)]]];
-    [swRows addObject:[self sep]];
-    [swRows addObject:[self rowTitle:@"Eval Labels" control:[self switchOn:gShowEvalLabels sel:@selector(swLabels:)]]];
-    [swRows addObject:[self sep]];
-    [swRows addObject:[self rowTitle:@"Color by Eval" control:[self switchOn:gArrowEvalColor sel:@selector(swColor:)]]];
-    UIStackView *sw = [[UIStackView alloc] initWithArrangedSubviews:swRows];
-    sw.axis = UILayoutConstraintAxisVertical; sw.spacing = 10;
-    [_stack addArrangedSubview:[self group:sw]];
+        UIStackView *grp = [[UIStackView alloc] initWithArrangedSubviews:@[
+            [self rowTitle:@"Evaluation" control:evalSeg], [self sep],
+            [self rowTitle:@"Arrows" control:arrSeg], [self sep],
+            [self rowTitle:@"Thickness" control:thickSeg], [self sep],
+            [self rowTitle:@"Opacity" control:_opValue],
+            [self sliderRow:op]]];
+        grp.axis = UILayoutConstraintAxisVertical; grp.spacing = 10;
+        [_stack addArrangedSubview:[self group:grp]];
 
-    [_stack addArrangedSubview:[self sectionLabel:@"Auto Play"]];
+        // ---- FEATURES ----
+        [_stack addArrangedSubview:[self sectionLabel:@"Features"]];
 
-    _apDelayValue = [self lbl:[NSString stringWithFormat:@"%.1fs", gAutoPlayDelay]
-                          size:15 weight:UIFontWeightSemibold color:CH_ACCENT];
-    [_apDelayValue setContentHuggingPriority:1000 forAxis:UILayoutConstraintAxisHorizontal];
-    UISlider *apDelay = [[UISlider alloc] init];
-    apDelay.minimumValue = 0.0; apDelay.maximumValue = 5.0;
-    apDelay.value = gAutoPlayDelay; apDelay.minimumTrackTintColor = CH_ACCENT;
-    [apDelay addTarget:self action:@selector(apDelaySlide:) forControlEvents:UIControlEventValueChanged];
-    [apDelay addTarget:self action:@selector(apDelayDone:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside];
-    UIView *delayRow = [self rowTitle:@"Move Delay" control:_apDelayValue];
-    UIStackView *apCol = [[UIStackView alloc] initWithArrangedSubviews:@[
-        [self rowTitle:@"Auto Play" control:[self switchOn:gAutoPlay sel:@selector(swAutoPlay:)]],
-        [self sep],
-        delayRow,
-        [self padded:apDelay top:2 bottom:4],
-        [self lbl:@"Wait after opponent's move before auto playing." size:11 weight:UIFontWeightRegular color:[UIColor colorWithWhite:0.5 alpha:1]]]];
-    apCol.axis = UILayoutConstraintAxisVertical; apCol.spacing = 10;
-    [_stack addArrangedSubview:[self group:apCol]];
+        NSMutableArray *swRows = [NSMutableArray array];
+        [swRows addObject:[self rowTitle:@"Maia (human-like)" control:[self switchOn:gUseMaia sel:@selector(swMaia:)]]];
+        [swRows addObject:[self sep]];
+        [swRows addObject:[self rowTitle:@"Move Analysis" control:[self switchOn:gTrackQuality sel:@selector(swAnalysis:)]]];
+        [swRows addObject:[self sep]];
+        [swRows addObject:[self rowTitle:@"Eval Labels" control:[self switchOn:gShowEvalLabels sel:@selector(swLabels:)]]];
+        [swRows addObject:[self sep]];
+        [swRows addObject:[self rowTitle:@"Color by Eval" control:[self switchOn:gArrowEvalColor sel:@selector(swColor:)]]];
+        UIStackView *sw = [[UIStackView alloc] initWithArrangedSubviews:swRows];
+        sw.axis = UILayoutConstraintAxisVertical; sw.spacing = 10;
+        [_stack addArrangedSubview:[self group:sw]];
 
-    [_stack addArrangedSubview:[self sectionLabel:@"Controls"]];
+        // ---- AUTO PLAY ----
+        [_stack addArrangedSubview:[self sectionLabel:@"Auto Play"]];
 
-    [_stack addArrangedSubview:[self bigBtn:(gEnabled ? @"Pause Assistant" : @"Enable Assistant")
-                                      color:(gEnabled ? [UIColor systemRedColor] : CH_ACCENT)
-                                        sel:@selector(enableTap)]];
-    UIButton *prefBtn = [self smallBtn:@"⚡ Preferred Settings (Ban-Safe)" sel:@selector(preferredTap)];
-    prefBtn.backgroundColor = [CH_ACCENT colorWithAlphaComponent:0.25];
-    [_stack addArrangedSubview:prefBtn];
-    UIStackView *foot = [[UIStackView alloc] initWithArrangedSubviews:@[
-        [self smallBtn:@"Debug Log" sel:@selector(debugTap)],
-        [self smallBtn:@"Credits" sel:@selector(creditsTap)]]];
-    foot.axis = UILayoutConstraintAxisHorizontal; foot.distribution = UIStackViewDistributionFillEqually; foot.spacing = 10;
-    [_stack addArrangedSubview:foot];
+        _apDelayValue = [self lbl:[NSString stringWithFormat:@"%.1fs", gAutoPlayDelay]
+                             size:15 weight:UIFontWeightSemibold color:CH_ACCENT];
+        [_apDelayValue setContentHuggingPriority:1000 forAxis:UILayoutConstraintAxisHorizontal];
+        UISlider *apDelay = [[UISlider alloc] init];
+        apDelay.minimumValue = 0.0; apDelay.maximumValue = 5.0;
+        apDelay.value = gAutoPlayDelay; apDelay.minimumTrackTintColor = CH_ACCENT;
+        [apDelay addTarget:self action:@selector(apDelaySlide:) forControlEvents:UIControlEventValueChanged];
+        [apDelay addTarget:self action:@selector(apDelayDone:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside];
+        UIStackView *apCol = [[UIStackView alloc] initWithArrangedSubviews:@[
+            [self rowTitle:@"Auto Play" control:[self switchOn:gAutoPlay sel:@selector(swAutoPlay:)]],
+            [self sep],
+            [self rowTitle:@"Move Delay" control:_apDelayValue],
+            [self sliderRow:apDelay],
+            [self lbl:@"Wait after opponent's move before auto playing." size:11 weight:UIFontWeightRegular color:[UIColor colorWithWhite:0.5 alpha:1]]]];
+        apCol.axis = UILayoutConstraintAxisVertical; apCol.spacing = 10;
+        [_stack addArrangedSubview:[self group:apCol]];
+
+        // ---- CONTROLS ----
+        [_stack addArrangedSubview:[self sectionLabel:@"Controls"]];
+
+        [_stack addArrangedSubview:[self bigBtn:(gEnabled ? @"Pause Assistant" : @"Enable Assistant")
+                                          color:(gEnabled ? [UIColor systemRedColor] : CH_ACCENT)
+                                            sel:@selector(enableTap)]];
+        UIButton *prefBtn = [self smallBtn:@"⚡ Preferred Settings (Ban-Safe)" sel:@selector(preferredTap)];
+        prefBtn.backgroundColor = [CH_ACCENT colorWithAlphaComponent:0.25];
+        [_stack addArrangedSubview:prefBtn];
+        UIStackView *foot = [[UIStackView alloc] initWithArrangedSubviews:@[
+            [self smallBtn:@"Debug Log" sel:@selector(debugTap)],
+            [self smallBtn:@"Credits" sel:@selector(creditsTap)]]];
+        foot.axis = UILayoutConstraintAxisHorizontal; foot.distribution = UIStackViewDistributionFillEqually; foot.spacing = 10;
+        [_stack addArrangedSubview:foot];
+    } @catch (NSException *e) {
+        dbg([NSString stringWithFormat:@"PANEL ERR: %@ — %@", e.name, e.reason]);
+    }
 }
 
 - (void)eloSlide:(UISlider *)s {
@@ -1397,7 +1410,10 @@ static int eloNearestIndex(NSInteger e) {
     gArrowThick = s.selectedSegmentIndex == 0 ? 0.7 : (s.selectedSegmentIndex == 2 ? 1.4 : 1.0);
     savePrefs(); redrawArrows();
 }
-- (void)opSlide:(UISlider *)s { gArrowAlpha = s.value; savePrefs(); redrawArrows(); }
+- (void)opSlide:(UISlider *)s {
+    gArrowAlpha = s.value; savePrefs(); redrawArrows();
+    _opValue.text = [NSString stringWithFormat:@"%d%%", (int)round(s.value * 100)];
+}
 - (void)swAnalysis:(UISwitch *)s { gTrackQuality = s.on; savePrefs(); if (!s.on) resetAccuracy(); [self populate]; }
 - (void)swLabels:(UISwitch *)s { gShowEvalLabels = s.on; savePrefs(); redrawArrows(); }
 - (void)swColor:(UISwitch *)s { gArrowEvalColor = s.on; savePrefs(); redrawArrows(); }
