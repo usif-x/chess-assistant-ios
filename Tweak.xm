@@ -1065,6 +1065,7 @@ static int eloNearestIndex(NSInteger e) {
 @interface CHSettingsPanel : UIView {
     UIView      *_card;
     UIStackView *_stack;
+    UIScrollView *_scroll;
     UILabel     *_eloValue;
     UILabel     *_eloTier;
     UILabel     *_apDelayValue;
@@ -1106,7 +1107,7 @@ static int eloNearestIndex(NSInteger e) {
 - (UILabel *)lbl:(NSString *)t size:(CGFloat)s weight:(UIFontWeight)w color:(UIColor *)c {
     UILabel *l = [[UILabel alloc] init];
     l.text = t; l.textColor = c; l.font = [UIFont systemFontOfSize:s weight:w];
-    l.numberOfLines = 0;
+    l.numberOfLines = 1;
     return l;
 }
 
@@ -1306,6 +1307,7 @@ static int eloNearestIndex(NSInteger e) {
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     [scroll addSubview:stack];
     _stack = stack;
+    _scroll = scroll;
 
     CGFloat bottomPad = 16;
     if (@available(iOS 11, *)) bottomPad += self.safeAreaInsets.bottom;
@@ -1390,7 +1392,7 @@ static int eloNearestIndex(NSInteger e) {
         eloHdr.axis = UILayoutConstraintAxisHorizontal; eloHdr.distribution = UIStackViewDistributionFill;
         UIStackView *eloCol = [[UIStackView alloc] initWithArrangedSubviews:@[
             eloHdr, [self sliderRow:elo], _eloTier]];
-        eloCol.axis = UILayoutConstraintAxisVertical; eloCol.spacing = 6;
+        eloCol.axis = UILayoutConstraintAxisVertical; eloCol.spacing = 8;
         [_stack addArrangedSubview:[self group:eloCol]];
 
         // ---- DISPLAY ----
@@ -1419,7 +1421,7 @@ static int eloNearestIndex(NSInteger e) {
             [self rowTitle:@"Thickness" control:thickSeg], [self sep],
             [self rowTitle:@"Opacity" control:_opValue],
             [self sliderRow:op]]];
-        grp.axis = UILayoutConstraintAxisVertical; grp.spacing = 10;
+        grp.axis = UILayoutConstraintAxisVertical; grp.spacing = 12;
         [_stack addArrangedSubview:[self group:grp]];
 
         // ---- FEATURES ----
@@ -1434,7 +1436,7 @@ static int eloNearestIndex(NSInteger e) {
         [swRows addObject:[self sep]];
         [swRows addObject:[self rowTitle:@"Color by Eval" control:[self switchOn:gArrowEvalColor sel:@selector(swColor:)]]];
         UIStackView *sw = [[UIStackView alloc] initWithArrangedSubviews:swRows];
-        sw.axis = UILayoutConstraintAxisVertical; sw.spacing = 10;
+        sw.axis = UILayoutConstraintAxisVertical; sw.spacing = 14;
         [_stack addArrangedSubview:[self group:sw]];
 
         // ---- AUTO PLAY ----
@@ -1454,7 +1456,7 @@ static int eloNearestIndex(NSInteger e) {
             [self rowTitle:@"Move Delay" control:_apDelayValue],
             [self sliderRow:apDelay],
             [self lbl:@"Wait after opponent's move before auto playing." size:11 weight:UIFontWeightRegular color:[UIColor colorWithWhite:0.5 alpha:1]]]];
-        apCol.axis = UILayoutConstraintAxisVertical; apCol.spacing = 10;
+        apCol.axis = UILayoutConstraintAxisVertical; apCol.spacing = 12;
         [_stack addArrangedSubview:[self group:apCol]];
 
         // ---- CONTROLS ----
@@ -1472,6 +1474,15 @@ static int eloNearestIndex(NSInteger e) {
             [self smallBtn:@"Credits" sel:@selector(creditsTap)]]];
         foot.axis = UILayoutConstraintAxisHorizontal; foot.distribution = UIStackViewDistributionFillEqually; foot.spacing = 10;
         [_stack addArrangedSubview:foot];
+
+        [_scroll setContentOffset:CGPointZero];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            NSMutableString *dump = [NSMutableString string];
+            for (UIView *v in _stack.arrangedSubviews) {
+                [dump appendFormat:@"[%@ %@] ", NSStringFromClass([v class]), NSStringFromCGRect(v.frame)];
+            }
+            dbg([NSString stringWithFormat:@"PANEL LAYOUT scroll=%@ stack=%@\n%@", NSStringFromCGRect(_scroll.frame), NSStringFromCGRect(_stack.frame), dump]);
+        });
     } @catch (NSException *e) {
         dbg([NSString stringWithFormat:@"PANEL ERR: %@ — %@", e.name, e.reason]);
     }
