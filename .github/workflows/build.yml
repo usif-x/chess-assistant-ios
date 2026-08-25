@@ -45,6 +45,12 @@ jobs:
           unzip -q model.zip -d "layout/Library/Application Support/Chess"
           chmod -R a+rX "layout/Library/Application Support/Chess"
           find "layout/Library/Application Support/Chess" -maxdepth 2 -print
+          # stage flat copies for embedding into the dylib (see Makefile)
+          MP="layout/Library/Application Support/Chess/maia3_5m.mlpackage"
+          cp "$MP/Manifest.json" maia_mfst.json
+          cp "$MP/Data/com.apple.CoreML/model.mlmodel" maia_model.bin
+          cp "$MP/Data/com.apple.CoreML/weights/weight.bin" maia_wghts.bin
+          ls -la maia_mfst.json maia_model.bin maia_wghts.bin
 
       - name: Setup Theos
         uses: beerpiss/theos-action@v1

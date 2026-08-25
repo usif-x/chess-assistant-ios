@@ -1965,10 +1965,12 @@ static void ensureMaiaLoaded(void) {
             if ([[NSFileManager defaultManager] fileExistsAtPath:c]) {
                 BOOL ok = MaiaLoad([c UTF8String]);
                 dbg([NSString stringWithFormat:@"maia retry load %@: %@", ok ? @"OK" : @"FAIL", c]);
-                return;
+                if (ok) return;
             }
         }
-        dbg(@"maia retry: model still not found");
+        // filesystem lookup failed (sandboxed app can't see /var/jb) — use model embedded in our dylib
+        BOOL ok = MaiaLoadEmbedded();
+        dbg([NSString stringWithFormat:@"maia embedded load: %@", ok ? @"OK" : @"FAIL"]);
     });
 }
 
@@ -3352,8 +3354,9 @@ static void installBoardHooks(void) {
             }
         }
         if (!found) {
-            dbg(@"maia: model NOT FOUND — searched:");
-            for (NSString *c in candidates) dbg([@"  " stringByAppendingString:c]);
+            dbg(@"maia: model not on disk — using embedded copy");
+            BOOL ok = MaiaLoadEmbedded();
+            dbg([NSString stringWithFormat:@"maia embedded load: %@", ok ? @"OK" : @"FAIL"]);
         }
     });
 
