@@ -1,55 +1,53 @@
 # Chess Assistant
 
-On-device chess move assistant for the Chess.com iOS app. Get best-move suggestions from a bundled **Stockfish 18** engine, or human-like moves from the **Maia 3** neural network — drawn as arrows right on the board.
+On-device chess move assistant for the Chess.com iOS app. It draws suggestions as arrows on the board, either the strongest move from a bundled Stockfish 18 or a human-like move from the Maia 3 neural network.
 
-Everything runs locally on the device. No network requests, no move data leaves your phone.
+Everything runs locally on the device. No network requests, and no move data leaves your phone.
 
 ## Features
 
-- **Engine suggestions** — Stockfish 18 (statically linked, NNUE nets embedded) evaluates positions and draws the best-move arrow directly on the board
-- **Maia (human-like)** — switch to the Maia 3 CoreML model for human-like moves at ~1300–1900 ELO instead of engine-perfect play
-- **Adjustable strength** — ELO slider from 400 to 3500 (mapped to search depth + skill level / UCI_LimitStrength)
-- **Multi-line arrows** — show up to 3 candidate moves with per-move eval labels
-- **Eval display** — centipawn or win-% evaluation on the floating button
-- **Move Analysis** — grades each of your moves (Brilliant → Blunder), tracks accuracy % and a full breakdown in the settings panel
-- **Auto Play** — automatically plays the engine's best move after your opponent moves
-  - Adjustable move delay (0–5s) with random ±1s jitter so moves look human
-  - ~10% chance to play the second-best move for extra realism
-  - Puzzle auto-solve support (always plays the correct solution)
-- **Quick pause** — long-press the floating ♟ button to instantly pause/resume the assistant
-- **Opening names** 📖 — live detection of ~40 openings (Ruy Lopez, Najdorf, Caro-Kann, Queen's Gambit…) shown in the panel
-- **Copy FEN** — one tap copies the current position to your clipboard
-- **Auto stats reset** — accuracy stats, move grades and opening tracking reset automatically when a game ends (checkmate / stalemate detected on-device)
-- **Arrow styling** — color by eval / solid green, thin–thick shafts, adjustable opacity
-- **Ban-safe preset** — ⚡ one-tap button that applies safe settings (ELO 1000, Maia on, Auto Play off)
-- Works in online games, bot games, and puzzles
+Two engines to pick from. Stockfish 18 is statically linked with its NNUE nets embedded, and always goes for the strongest move. Maia 3 runs as a CoreML model and instead plays what a human around 1300 to 1900 ELO would play.
+
+- ELO slider from 400 to 3500, mapped to search depth plus skill level and UCI_LimitStrength
+- Up to 3 candidate arrows, each labeled with its own eval
+- Centipawn or win percentage on the floating button
+- Move Analysis grades every move you play from Brilliant to Blunder, tracks accuracy, and shows the full breakdown in the settings panel
+- Auto Play answers for you once your opponent moves. The delay is adjustable from 0 to 5 seconds with about a second of random jitter, and roughly 10% of the time it plays the second-best move so the choices look less mechanical. In puzzles it always plays the correct solution.
+- Long-press the floating ♟ button to pause or resume the assistant right away
+- Live detection of about 40 openings, including the Ruy Lopez, Najdorf, Caro-Kann and Queen's Gambit, shown in the panel
+- One tap copies the current FEN to your clipboard
+- Accuracy stats, move grades and opening tracking reset when a game ends, detected on-device from checkmate or stalemate
+- Arrow styling: color by eval or solid green, thin to thick shafts, adjustable opacity
+- A ⚡ button that applies safer settings in one tap (ELO 1000, Maia on, Auto Play off)
+
+Works in online games, bot games and puzzles.
 
 ## Install
 
 ### Jailbroken (rootless)
 
-Add the repo to Sileo/Zebra and install:
+Add the repo in Sileo or Zebra and install:
 
 ```
 https://itzzace.github.io/chess-assistant/
 ```
 
-Respring after install, then open Chess.com.
+Respring after installing, then open Chess.com.
 
 ### TrollStore (no jailbreak)
 
-Grab the iOS 16 / 17 IPA from the [releases page](https://github.com/itzzace/chess-assistant/releases) and sideload with TrollStore.
+Download the iOS 16 or 17 IPA from the [releases page](https://github.com/itzzace/chess-assistant/releases) and sideload it with TrollStore.
 
 ## Usage
 
 1. Open Chess.com and start any game.
-2. Tap the floating ♟ button to open the settings panel (long-press to pause/resume instantly).
-3. Set your ELO, toggle Maia / Auto Play / Move Analysis as desired — or hit ⚡ for the ban-safe preset.
-4. Arrows appear on the board when it's your turn; enable Auto Play and they'll be played for you.
+2. Tap the floating ♟ button to open the settings panel. Long-press it to pause or resume instantly.
+3. Set your ELO and turn on Maia, Auto Play or Move Analysis as you like. The ⚡ button applies safer settings for you.
+4. Arrows appear on the board when it's your turn. With Auto Play on, the move gets played for you.
 
-Tap **Debug Log** in the panel to view recent events (FEN detection, engine responses, hooks installed). Tap **📋 FEN** to copy the current position.
+Debug Log in the panel shows recent events such as FEN detection, engine responses and which hooks installed. FEN copies the current position.
 
-> ⚠️ Using an assistant violates Chess.com's fair-play policy and can get your account banned. Higher strengths (>~1500 ELO) are much easier to detect.
+> Warning: using an assistant breaks Chess.com's fair-play policy and can get your account banned. Anything above roughly 1500 ELO is much easier to detect.
 
 ## Building
 
@@ -77,7 +75,7 @@ cd ../..
 make package FINALPACKAGE=1
 ```
 
-CI does all of this automatically — see [.github/workflows/build.yml](.github/workflows/build.yml). The Maia 3 CoreML model (`maia3_5m.mlpackage`) is downloaded from the repo's `maia-model` release during packaging and installed to `/var/jb/Library/Application Support/Chess/`.
+CI does all of this automatically. See [.github/workflows/build.yml](.github/workflows/build.yml). The Maia 3 CoreML model (`maia3_5m.mlpackage`) is downloaded from the repo's `maia-model` release during packaging and installed to `/var/jb/Library/Application Support/Chess/`.
 
 ## Project layout
 
@@ -92,9 +90,9 @@ CI does all of this automatically — see [.github/workflows/build.yml](.github/
 
 ## Credits
 
-- Made by **@epicccccc** ([YouTube](https://youtube.com/@epicccccc), Discord: `itzzace.`)
-- **Yousseif** ([GitHub: usif-x](https://github.com/usif-x)) — Stockfish 18 upgrade, Auto Play (with human-like timing & puzzle solving), quick pause, opening detection, Copy FEN, auto stats reset & tweak updates
-- [Stockfish](https://stockfishchess.org) — GPL v3 chess engine
-- [Maia 3](https://github.com/CSSLab/maia3) — human-like chess AI
+- Made by @epicccccc ([YouTube](https://youtube.com/@epicccccc), Discord: `itzzace.`)
+- Yousseif ([usif-x](https://github.com/usif-x)) upgraded the engine to Stockfish 18 and added Auto Play with human-like timing and puzzle solving, quick pause, opening detection, Copy FEN, auto stats reset and other tweak updates
+- [Stockfish](https://stockfishchess.org), the GPL v3 chess engine
+- [Maia 3](https://github.com/CSSLab/maia3), human-like chess AI
 
-Licensed under GPL v3 where applicable due to Stockfish linkage.
+Licensed under GPL v3 where applicable, because of the Stockfish linkage.
