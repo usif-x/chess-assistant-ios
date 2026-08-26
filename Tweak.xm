@@ -1835,9 +1835,10 @@ static void updateEvalBar(void) {
     if (bF.size.width < 60) return;
     BOOL masked = board.layer.masksToBounds;
 
-    // horizontal bar sitting just above the board; falls back to an overlay
-    // pinned inside the top edge if the board clips its own layer
-    CGRect bar = CGRectMake(2, masked ? 3 : -(barH + 4), bF.size.width - 4, barH);
+    // horizontal bar sitting above the board, raised by an extra bar-height so
+    // it never touches the top rank; falls back to an overlay pinned inside
+    // the top edge if the board clips its own layer
+    CGRect bar = CGRectMake(2, masked ? 3 : -(barH * 2 + 6), bF.size.width - 4, barH);
 
     double frac = 0.5;
     NSString *txt;
