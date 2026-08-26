@@ -17,6 +17,7 @@ extern "C" {
 #endif
 
 bool MaiaLoad(const char *mlpackagePath);
+bool MaiaLoadEmbedded(void);
 bool MaiaAvailable(void);
 void MaiaGo(const char *fen, int selfElo, int oppoElo, MaiaResultBlock done);
 

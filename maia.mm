@@ -1,6 +1,8 @@
 #import "maia.h"
 #import "engine.h"
 #import <CoreML/CoreML.h>
+#import <dlfcn.h>
+#import <mach-o/getsect.h>
 #import <vector>
 #import <string>
 #import <unordered_map>
@@ -150,6 +152,60 @@ extern "C" bool MaiaLoad(const char *mlpackagePath) {
 
 extern "C" bool MaiaAvailable(void) {
     return gMaiaModel != nil;
+}
+
+static bool MaiaLoadFromDir(NSString *dir) {
+    @autoreleasepool {
+        NSError *err = nil;
+        NSURL *url = [NSURL fileURLWithPath:dir];
+        NSURL *compiled = [MLModel compileModelAtURL:url error:&err];
+        if (!compiled || err) return false;
+
+        MLModelConfiguration *cfg = [[MLModelConfiguration alloc] init];
+        cfg.computeUnits = MLComputeUnitsCPUOnly;
+        MLModel *m = [MLModel modelWithContentsOfURL:compiled configuration:cfg error:&err];
+        if (!m || err) return false;
+        gMaiaModel = m;
+    }
+    return gMaiaModel != nil;
+}
+
+// Reconstruct the mlpackage from sections embedded in our own dylib and load it
+// from the app's temp dir — works even when the app sandbox can't read /var/jb.
+extern "C" bool MaiaLoadEmbedded(void) {
+    if (gMaiaModel) return true;
+    buildMoveTables();
+
+    @autoreleasepool {
+        Dl_info info;
+        if (!dladdr((void *)&MaiaLoadEmbedded, &info) || !info.dli_fbase) return false;
+        const struct mach_header_64 *mh = (const struct mach_header_64 *)info.dli_fbase;
+
+        unsigned long mfLen = 0, mdLen = 0, wLen = 0;
+        uint8_t *mf = (uint8_t *)getsectiondata(mh, "__TEXT", "__maia_mfst", &mfLen);
+        uint8_t *md = (uint8_t *)getsectiondata(mh, "__TEXT", "__maia_model", &mdLen);
+        uint8_t *wg = (uint8_t *)getsectiondata(mh, "__TEXT", "__maia_wghts", &wLen);
+        if (!mf || !md || !wg || mfLen == 0 || mdLen == 0 || wLen == 0) return false;
+
+        NSFileManager *fm = [NSFileManager defaultManager];
+        NSString *dir = [NSTemporaryDirectory() stringByAppendingPathComponent:@"maia3_5m.mlpackage"];
+        [fm removeItemAtPath:dir error:nil];
+
+        NSString *weightsDir = [dir stringByAppendingPathComponent:@"Data/com.apple.CoreML/weights"];
+        if (![fm createDirectoryAtPath:weightsDir withIntermediateDirectories:YES attributes:nil error:nil])
+            return false;
+
+        BOOL ok = [fm createFileAtPath:[dir stringByAppendingPathComponent:@"Manifest.json"]
+                              contents:[NSData dataWithBytes:mf length:mfLen] attributes:nil];
+        ok = ok && [fm createFileAtPath:[[dir stringByAppendingPathComponent:@"Data/com.apple.CoreML"]
+                                         stringByAppendingPathComponent:@"model.mlmodel"]
+                               contents:[NSData dataWithBytes:md length:mdLen] attributes:nil];
+        ok = ok && [fm createFileAtPath:[weightsDir stringByAppendingPathComponent:@"weight.bin"]
+                               contents:[NSData dataWithBytes:wg length:wLen] attributes:nil];
+        if (!ok) return false;
+
+        return MaiaLoadFromDir(dir);
+    }
 }
 
 extern "C" void MaiaGo(const char *fen, int selfElo, int oppoElo, MaiaResultBlock done) {
