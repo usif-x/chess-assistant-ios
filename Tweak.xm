@@ -67,11 +67,7 @@ static BOOL gSkipNextTap = NO;
 
 static NSMutableArray *gLog;
 static void dbg(NSString *msg) {
-    if (!gLog) gLog = [NSMutableArray array];
-    [gLog addObject:[NSString stringWithFormat:@"[%@] %@",
-        [NSDateFormatter localizedStringFromDate:[NSDate date]
-            dateStyle:NSDateFormatterNoStyle timeStyle:NSDateFormatterMediumStyle], msg]];
-    while (gLog.count > 80) [gLog removeObjectAtIndex:0];
+    (void)msg;
 }
 
 static void savePrefs(void) {
@@ -1875,30 +1871,19 @@ static void playMoveOnBoard(NSString *uci, NSString *fenSnap) {
     });
 }
 
-static void tryAutoPlay(NSString *bestmove, NSArray *extraMoves, NSString *fenSnap) {
+static void tryAutoPlay(NSString *bestmove, NSString *fenSnap) {
     if (!gAutoPlay || !gEnabled) return;
     if (gPuzzleCtx) return;
     if (bestmove.length < 4) return;
     if (!fenSnap.length || [fenSnap isEqualToString:gLastAutoPlayed]) return;
     gLastAutoPlayed = [fenSnap copy];
 
-    double base = MAX(gAutoPlayDelay, 0.5);
-    double jit = ((double)arc4random_uniform(2001) / 1000.0) - 1.0; // -1.0 .. +1.0
-    double delay = base + jit;
-    if (delay < 0.2) delay = 0.2;
+    double delay = gAutoPlayDelay;
+    if (delay < 0.0) delay = 0.0;
     if (delay > 6.0) delay = 6.0;
 
-    NSString *chosen = bestmove;
-    if (extraMoves.count > 0 && arc4random_uniform(100) < 10) {
-        NSString *alt = extraMoves.firstObject[@"move"];
-        if (alt.length >= 4 && ![alt isEqualToString:bestmove]) {
-            chosen = alt;
-            dbg([NSString stringWithFormat:@"autoplay alt move: %@", alt]);
-        }
-    }
-
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{ playMoveOnBoard(chosen, fenSnap); });
+                   dispatch_get_main_queue(), ^{ playMoveOnBoard(bestmove, fenSnap); });
 }
 
 static void applyEngineResult(NSString *bestmove, NSArray *extraMoves, BOOL isMate, int mateIn,
@@ -1944,7 +1929,7 @@ static void applyEngineResult(NSString *bestmove, NSArray *extraMoves, BOOL isMa
             rank++;
         }
         drawArrowsOnBoard(arrows, board, flipped);
-        tryAutoPlay(bestmove, extraMoves, gLastFen);
+        tryAutoPlay(bestmove, gLastFen);
     } else {
         dbg(@"no board ref for arrow");
     }
