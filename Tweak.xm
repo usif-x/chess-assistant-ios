@@ -150,6 +150,7 @@ static NSInteger eloToDepth(NSInteger elo) {
 }
 
 static void showQualityToast(NSString *text, UIColor *color);
+static void ensureMaiaLoaded(void);
 
 static NSString *formatEvalLabel(double evalUs, BOOL isMate, int mateIn) {
     if (isMate) return [NSString stringWithFormat:@"M%d", abs(mateIn)];
@@ -1426,6 +1427,12 @@ static void clampGeloToActiveRange(void) {
         // ---- ENGINE ----
         [_stack addArrangedSubview:[self sectionLabel:@"Engine"]];
         int eloCnt = 0; const NSInteger *eloLvls = activeEloLevels(&eloCnt);
+
+        UISegmentedControl *engSeg = [[UISegmentedControl alloc] initWithItems:@[@"SF18", @"MAIA"]];
+        engSeg.selectedSegmentIndex = gUseMaia ? 1 : 0;
+        [self styleSeg:engSeg];
+        [engSeg addTarget:self action:@selector(engSeg:) forControlEvents:UIControlEventValueChanged];
+
         _eloValue = [self lbl:[NSString stringWithFormat:@"%ld", (long)gElo] size:16 weight:UIFontWeightSemibold color:CH_ACCENT];
         NSString *tierText = gUseMaia
             ? [NSString stringWithFormat:@"%@ · tuned for Maia (%ld–%ld)", eloTierName(gElo), (long)eloLvls[0], (long)eloLvls[eloCnt-1]]
@@ -1442,6 +1449,7 @@ static void clampGeloToActiveRange(void) {
             [self lbl:strengthTitle size:15 weight:UIFontWeightMedium color:UIColor.whiteColor], _eloValue]];
         eloHdr.axis = UILayoutConstraintAxisHorizontal; eloHdr.distribution = UIStackViewDistributionFill;
         UIStackView *eloCol = [[UIStackView alloc] initWithArrangedSubviews:@[
+            [self rowTitle:@"Engine" control:engSeg], [self sep],
             eloHdr, [self sliderRow:elo], _eloTier]];
         eloCol.axis = UILayoutConstraintAxisVertical; eloCol.spacing = 8;
         [_stack addArrangedSubview:[self group:eloCol]];
@@ -1479,8 +1487,6 @@ static void clampGeloToActiveRange(void) {
         [_stack addArrangedSubview:[self sectionLabel:@"Features"]];
 
         NSMutableArray *swRows = [NSMutableArray array];
-        [swRows addObject:[self rowTitle:@"Maia (human-like)" control:[self switchOn:gUseMaia sel:@selector(swMaia:)]]];
-        [swRows addObject:[self sep]];
         [swRows addObject:[self rowTitle:@"Move Analysis" control:[self switchOn:gTrackQuality sel:@selector(swAnalysis:)]]];
         [swRows addObject:[self sep]];
         [swRows addObject:[self rowTitle:@"Eval Labels" control:[self switchOn:gShowEvalLabels sel:@selector(swLabels:)]]];
@@ -1597,12 +1603,13 @@ static void clampGeloToActiveRange(void) {
 - (void)swAnalysis:(UISwitch *)s { gTrackQuality = s.on; savePrefs(); if (!s.on) resetAccuracy(); [self populate]; }
 - (void)swLabels:(UISwitch *)s { gShowEvalLabels = s.on; savePrefs(); redrawArrows(); }
 - (void)swColor:(UISwitch *)s { gArrowEvalColor = s.on; savePrefs(); redrawArrows(); }
-- (void)swMaia:(UISwitch *)s {
-    gUseMaia = s.on;
+- (void)engSeg:(UISegmentedControl *)s {
+    gUseMaia = (s.selectedSegmentIndex == 1);
     clampGeloToActiveRange();
     savePrefs(); gLastFen = nil;
-    dbg([NSString stringWithFormat:@"Maia: %@ — strength range %@", gUseMaia ? @"ON" : @"OFF",
-         gUseMaia ? @"900–2000 (human-like)" : @"400–3500 (stockfish)"]);
+    if (gUseMaia) ensureMaiaLoaded();
+    dbg([NSString stringWithFormat:@"engine: %@ — strength range %@", gUseMaia ? @"MAIA" : @"SF18",
+         gUseMaia ? @"900–2000 (human-like)" : @"400–3500"]);
     [self populate];
 }
 - (void)swAutoPlay:(UISwitch *)s {
