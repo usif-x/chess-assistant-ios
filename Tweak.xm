@@ -21,6 +21,7 @@
 #define PREF_EVALCLR @"ChessAssist_ArrowEvalColor"
 #define PREF_QUALITY @"ChessAssist_TrackQuality"
 #define PREF_EVALLBL @"ChessAssist_EvalLabels"
+#define PREF_EVALBAR @"ChessAssist_EvalBar"
 #define PREF_USEMAIA @"ChessAssist_UseMaia"
 #define PREF_AUTOPLAY @"ChessAssist_AutoPlay"
 #define PREF_APDELAY  @"ChessAssist_AutoPlayDelay"
@@ -72,6 +73,11 @@ static NSInteger gAutoPlaySecondBestPct = 10;
 static NSString *gLastAutoPlayed = nil;
 static NSMutableString *gUciSeq = nil;
 static NSString *gPgnStartFen = nil;
+static BOOL gShowEvalBar = YES;
+static BOOL gBarHave = NO;
+static double gBarWhiteEval = 0;
+static BOOL gBarIsMate = NO;
+static int gBarMateWhite = 0;
 static BOOL gSkipNextTap = NO;
 
 static NSMutableArray *gLog;
@@ -93,6 +99,7 @@ static void savePrefs(void) {
     [d setBool:gUseMaia forKey:PREF_USEMAIA];
     [d setBool:gAutoPlay forKey:PREF_AUTOPLAY];
     [d setDouble:gAutoPlayDelay forKey:PREF_APDELAY];
+    [d setBool:gShowEvalBar forKey:PREF_EVALBAR];
     [d setBool:gAutoPlayJitterEnabled forKey:PREF_APJITEN];
     [d setDouble:gAutoPlayJitterRange forKey:PREF_APJITRNG];
     [d setBool:gAutoPlaySecondBest forKey:PREF_AP2ND];
@@ -117,6 +124,7 @@ static void loadPrefs(void) {
         if (gAutoPlayDelay < 0) gAutoPlayDelay = 0;
         if (gAutoPlayDelay > 5.0) gAutoPlayDelay = 5.0;
     }
+    if ([d objectForKey:PREF_EVALBAR]) gShowEvalBar = [d boolForKey:PREF_EVALBAR];
     if ([d objectForKey:PREF_APJITEN]) gAutoPlayJitterEnabled = [d boolForKey:PREF_APJITEN];
     if ([d objectForKey:PREF_APJITRNG]) {
         gAutoPlayJitterRange = [d doubleForKey:PREF_APJITRNG];
@@ -153,6 +161,8 @@ static NSInteger eloToDepth(NSInteger elo) {
 static void showQualityToast(NSString *text, UIColor *color);
 static void ensureMaiaLoaded(void);
 static NSString *buildPGN(void);
+static void updateEvalBar(void);
+static void removeEvalBar(void);
 
 static NSString *formatEvalLabel(double evalUs, BOOL isMate, int mateIn) {
     if (isMate) return [NSString stringWithFormat:@"M%d", abs(mateIn)];
@@ -1482,6 +1492,7 @@ static void clampGeloToActiveRange(void) {
             [self rowTitle:@"Evaluation" control:evalSeg], [self sep],
             [self rowTitle:@"Arrows" control:arrSeg], [self sep],
             [self rowTitle:@"Thickness" control:thickSeg], [self sep],
+            [self rowTitle:@"Eval Bar" control:[self switchOn:gShowEvalBar sel:@selector(swEvalBar:)]], [self sep],
             [self rowTitle:@"Opacity" control:_opValue],
             [self sliderRow:op]]];
         grp.axis = UILayoutConstraintAxisVertical; grp.spacing = 12;
@@ -1603,6 +1614,11 @@ static void clampGeloToActiveRange(void) {
 - (void)thickSeg:(UISegmentedControl *)s {
     gArrowThick = s.selectedSegmentIndex == 0 ? 0.7 : (s.selectedSegmentIndex == 2 ? 1.4 : 1.0);
     savePrefs(); redrawArrows();
+}
+- (void)swEvalBar:(UISwitch *)s {
+    gShowEvalBar = s.on; savePrefs();
+    if (!gShowEvalBar) removeEvalBar(); else updateEvalBar();
+    dbg([NSString stringWithFormat:@"eval bar: %@", gShowEvalBar ? @"ON" : @"OFF"]);
 }
 - (void)opSlide:(UISlider *)s {
     gArrowAlpha = s.value; savePrefs(); redrawArrows();
@@ -1798,6 +1814,71 @@ static BOOL isBoardOnScreen(UIView *v) {
     if (ownArea <= 1) return NO;
     CGFloat visArea = inter.size.width * inter.size.height;
     return (visArea / ownArea) > 0.5;
+}
+
+#pragma mark - Eval Bar (horizontal, above board)
+
+static NSMutableArray *gEvalBarLayers = nil;
+
+static void removeEvalBar(void) {
+    for (CALayer *l in gEvalBarLayers) [l removeFromSuperlayer];
+    [gEvalBarLayers removeAllObjects];
+}
+
+static void updateEvalBar(void) {
+    removeEvalBar();
+    UIView *board = gDrawBoard ?: gBoardView ?: gBotBoard;
+    if (!gShowEvalBar || !gBarHave || !board || !board.window || !isBoardOnScreen(board)) return;
+
+    CGFloat barH = 16;
+    CGRect bF = board.bounds;
+    if (bF.size.width < 60) return;
+    BOOL masked = board.layer.masksToBounds;
+
+    // horizontal bar sitting just above the board; falls back to an overlay
+    // pinned inside the top edge if the board clips its own layer
+    CGRect bar = CGRectMake(2, masked ? 3 : -(barH + 4), bF.size.width - 4, barH);
+
+    double frac = 0.5;
+    NSString *txt;
+    if (gBarIsMate) {
+        BOOL whiteMates = gBarMateWhite > 0;
+        frac = whiteMates ? 0.95 : 0.05;
+        txt = [NSString stringWithFormat:@"%@M%d", whiteMates ? @"" : @"-", abs(gBarMateWhite)];
+    } else {
+        double wp = evalToWinPct(gBarWhiteEval, NO, 0);
+        frac = MIN(0.97, MAX(0.03, wp / 100.0));
+        txt = [NSString stringWithFormat:@"%+.1f", gBarWhiteEval];
+    }
+    UIColor *txtColor = frac >= 0.5 ? UIColor.blackColor : UIColor.whiteColor;
+
+    if (!gEvalBarLayers) gEvalBarLayers = [NSMutableArray array];
+
+    CALayer *bg = [CALayer layer];
+    bg.frame = bar;
+    bg.backgroundColor = [UIColor colorWithWhite:0.13 alpha:0.94].CGColor;
+    bg.cornerRadius = 4;
+    bg.zPosition = 10005;
+
+    CALayer *fill = [CALayer layer];
+    fill.frame = CGRectMake(1, 1, MAX(2, (bar.size.width - 2) * frac), barH - 2);
+    fill.backgroundColor = [UIColor whiteColor].CGColor;
+    fill.cornerRadius = 3;
+    fill.zPosition = 10006;
+
+    CATextLayer *tl = [CATextLayer layer];
+    tl.frame = bar;
+    tl.string = txt;
+    tl.fontSize = 11;
+    tl.alignmentMode = kCAAlignmentCenter;
+    tl.foregroundColor = txtColor.CGColor;
+    tl.contentsScale = [UIScreen mainScreen].scale;
+    tl.zPosition = 10007;
+
+    [board.layer addSublayer:bg];
+    [board.layer addSublayer:fill];
+    [board.layer addSublayer:tl];
+    [gEvalBarLayers addObjectsFromArray:@[bg, fill, tl]];
 }
 
 static BOOL detectBoardFlipped(UIView *board) {
@@ -2041,6 +2122,12 @@ static void applyEngineResult(NSString *bestmove, NSArray *extraMoves, BOOL isMa
     gLastEval = isMate ? (mateIn > 0 ? 999 : -999) : evalForUs;
     gHasEval = YES;
 
+    // eval bar data (white perspective)
+    gBarWhiteEval = rawEval;
+    gBarIsMate = isMate;
+    gBarMateWhite = isMate ? ((gMyColor == 1) ? -mateIn : mateIn) : 0;
+    gBarHave = YES;
+
     NSString *evalStr = @"";
     NSString *btnText = @"♟";
     if (isMate) {
@@ -2079,6 +2166,7 @@ static void applyEngineResult(NSString *bestmove, NSArray *extraMoves, BOOL isMa
             rank++;
         }
         drawArrowsOnBoard(arrows, board, flipped);
+        updateEvalBar();
     } else {
         dbg(@"no board ref for arrow");
     }
@@ -2527,8 +2615,10 @@ static void enginePollTick(void) {
         !(gBotBoard  && isBoardOnScreen(gBotBoard)) &&
         !(gDrawBoard && isBoardOnScreen(gDrawBoard))) {
         clearArrow();
+        removeEvalBar();
         updateFloatBtn(@"♟");
         gHasEval = NO;
+        gBarHave = NO;
         gLastFen = nil;
         resetAccuracy();
     }
@@ -2549,6 +2639,7 @@ static void enginePollTick(void) {
     if (gOnlineGame) {
         if (gOnlineDrawBoard) gDrawBoard = gOnlineDrawBoard;
         reassertArrow(gDrawBoard);
+        updateEvalBar();
         @try {
             typedef NSString *(*SG)(id, SEL);
             SEL encSel = NSSelectorFromString(@"encodedMoves");
@@ -3095,6 +3186,7 @@ static void hook_layoutSubviews(id self, SEL _cmd) {
     gBoardView = boardSelf;
 
     reassertArrow(gDrawBoard);
+    updateEvalBar();
 
     NSDate *now = [NSDate date];
     if (gLastLayoutCheck && [now timeIntervalSinceDate:gLastLayoutCheck] < 0.5) return;
