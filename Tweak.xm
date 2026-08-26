@@ -71,6 +71,7 @@ static BOOL gAutoPlaySecondBest = NO;
 static NSInteger gAutoPlaySecondBestPct = 10;
 static NSString *gLastAutoPlayed = nil;
 static NSMutableString *gUciSeq = nil;
+static NSString *gPgnStartFen = nil;
 static BOOL gSkipNextTap = NO;
 
 static NSMutableArray *gLog;
@@ -151,6 +152,7 @@ static NSInteger eloToDepth(NSInteger elo) {
 
 static void showQualityToast(NSString *text, UIColor *color);
 static void ensureMaiaLoaded(void);
+static NSString *buildPGN(void);
 
 static NSString *formatEvalLabel(double evalUs, BOOL isMate, int mateIn) {
     if (isMate) return [NSString stringWithFormat:@"M%d", abs(mateIn)];
@@ -211,17 +213,17 @@ static int fenMaterial(NSString *fen, int color ) {
     return sum;
 }
 
-static int classifyMove(double lossCp, double beforeUs, double afterUs,
-                        BOOL playedBest, BOOL onlyGood, BOOL sacrificed) {
-    if (playedBest && sacrificed && afterUs >= 1.0) return Q_BRILLIANT;
-    if (playedBest && onlyGood)                     return Q_GREAT;
-    if (lossCp <= 10)  return Q_BEST;
-    if (lossCp <= 40)  return Q_EXCELLENT;
-    if (lossCp <= 90)  return Q_GOOD;
-    if (lossCp <= 150) return Q_INACC;
-
-    if (beforeUs >= 2.0 && afterUs >= 0.0) return Q_MISS;
-    if (lossCp <= 300) return Q_MISTAKE;
+// Grade on win-% loss (chess.com-style) instead of raw centipawns — far more
+// stable across shallow searches, so genuinely best moves stop showing as
+// "Inaccuracy" from ±30cp eval noise.
+static int classifyMove(double winLoss, BOOL playedBest, BOOL onlyGood, BOOL sacrificed) {
+    if (playedBest && sacrificed) return Q_BRILLIANT;
+    if (playedBest && onlyGood)   return Q_GREAT;
+    if (winLoss <= 0.5)  return Q_BEST;
+    if (winLoss <= 2.0)  return Q_EXCELLENT;
+    if (winLoss <= 5.0)  return Q_GOOD;
+    if (winLoss <= 10.0) return Q_INACC;
+    if (winLoss <= 20.0) return Q_MISTAKE;
     return Q_BLUNDER;
 }
 
@@ -254,7 +256,7 @@ static void analyzeUserMove(NSString *oppFen) {
     NSString *beforeFen = [gQualFen copy];
     int    userColor   = gMyColor;
     BOOL   stmWhite    = ([oppFen rangeOfString:@" w "].location != NSNotFound);
-    NSInteger depth    = eloToDepth(gElo);
+    NSInteger depth    = MAX(14, eloToDepth(gElo)); // stable evals matter more than speed here
 
     EngineGo([oppFen UTF8String], (int)depth, (int)gElo, 1,
              ^(const EngineLine *lines, int count) {
@@ -267,23 +269,24 @@ static void analyzeUserMove(NSString *oppFen) {
             double beforeUs = (userColor == 1) ? -beforeWhite : beforeWhite;
             double afterUs  = (userColor == 1) ? -afterWhite  : afterWhite;
             double secondUs = (userColor == 1) ? -secondWhite : secondWhite;
-            double lossCp = (beforeUs - afterUs) * 100.0;
-            if (lossCp < 0) lossCp = 0;
 
-            BOOL playedBest = lossCp <= 10;
+            double winBefore = evalToWinPct(beforeUs, NO, 0);
+            double winAfter  = evalToWinPct(afterUs, NO, 0);
+            double winLoss   = winBefore - winAfter;
+            if (winLoss < 0) winLoss = 0;
+
+            BOOL playedBest = winLoss <= 0.5;
             BOOL onlyGood   = have2nd && (beforeUs - secondUs) >= 1.5;
 
             int dBefore = fenMaterial(beforeFen, userColor) - fenMaterial(beforeFen, 1 - userColor);
             int dAfter  = fenMaterial(oppFen,    userColor) - fenMaterial(oppFen,    1 - userColor);
             BOOL sacrificed = (dAfter <= -2) && (dAfter < dBefore);
 
-            int cat = classifyMove(lossCp, beforeUs, afterUs, playedBest, onlyGood, sacrificed);
+            int cat = classifyMove(winLoss, playedBest, onlyGood, sacrificed);
             gQ[cat]++;
-            double acc = moveAccuracy(evalToWinPct(beforeUs, NO, 0), evalToWinPct(afterUs, NO, 0));
+            double acc = moveAccuracy(winBefore, winAfter);
             gAccSum += acc; gAccCount++;
-            gLastMoveQuality = [NSString stringWithFormat:@"%@ (-%.2f)", qName(cat), lossCp / 100.0];
-            dbg([NSString stringWithFormat:@"move: %@ | acc %.0f%% | game %.0f%%",
-                 gLastMoveQuality, acc, gAccCount ? gAccSum / gAccCount : 0]);
+            gLastMoveQuality = [NSString stringWithFormat:@"%@ (-%.1f%%)", qName(cat), winLoss];
             showQualityToast([NSString stringWithFormat:@"%@ %@", qSymbol(cat), qName(cat)], qColor(cat));
         });
     });
@@ -399,6 +402,7 @@ static int tcnIndex(unichar c) {
 
 static NSString *decodeTCNToFEN(NSString *initialFEN, NSString *encoded) {
     parseFEN(initialFEN);
+    gPgnStartFen = [initialFEN copy];
     if (!gUciSeq) gUciSeq = [NSMutableString string];
     [gUciSeq setString:@""];
     if (!encoded.length) return generateFEN();
@@ -1552,8 +1556,12 @@ static void clampGeloToActiveRange(void) {
         UIButton *prefBtn = [self smallBtn:@"⚡ Preferred Settings (Ban-Safe)" sel:@selector(preferredTap)];
         prefBtn.backgroundColor = [CH_ACCENT colorWithAlphaComponent:0.25];
         [_stack addArrangedSubview:prefBtn];
+        UIStackView *copyRow = [[UIStackView alloc] initWithArrangedSubviews:@[
+            [self smallBtn:@"📋 Copy FEN" sel:@selector(copyFenTap)],
+            [self smallBtn:@"📜 Copy PGN" sel:@selector(pgnTap)]]];
+        copyRow.axis = UILayoutConstraintAxisHorizontal; copyRow.distribution = UIStackViewDistributionFillEqually; copyRow.spacing = 10;
+        [_stack addArrangedSubview:copyRow];
         UIStackView *foot = [[UIStackView alloc] initWithArrangedSubviews:@[
-            [self smallBtn:@"📋 FEN" sel:@selector(copyFenTap)],
             [self smallBtn:@"Debug Log" sel:@selector(debugTap)],
             [self smallBtn:@"Credits" sel:@selector(creditsTap)]]];
         foot.axis = UILayoutConstraintAxisHorizontal; foot.distribution = UIStackViewDistributionFillEqually; foot.spacing = 10;
@@ -1657,6 +1665,15 @@ static void clampGeloToActiveRange(void) {
     if (v > 50) v = 50;
     gAutoPlaySecondBestPct = v;
     savePrefs();
+}
+- (void)pgnTap {
+    NSString *pgn = buildPGN();
+    if (!pgn.length) {
+        showQualityToast(@"No game moves yet", [UIColor systemOrangeColor]);
+        return;
+    }
+    [UIPasteboard generalPasteboard].string = pgn;
+    showQualityToast(@"📜 PGN copied", CH_ACCENT);
 }
 - (void)copyFenTap {
     NSString *fen = gLastFen;
@@ -2129,6 +2146,114 @@ static void ensureMaiaLoaded(void) {
     });
 }
 
+// SAN for one UCI move in the given position: board state gives piece/capture,
+// Stockfish legal-move enumeration handles disambiguation.
+static NSString *sanForMove(NSString *fen, NSString *uci) {
+    parseFEN(fen);
+    int from = 0, to = 0;
+    if (!parseMoveUCI(uci, &from, &to)) return nil;
+    if (from < 0 || from > 63 || to < 0 || to > 63) return nil;
+    char piece = gBoard[from];
+    if (piece == ' ') return nil;
+    char up = (char)toupper((unsigned char)piece);
+
+    if (up == 'K' && abs((to % 8) - (from % 8)) == 2)
+        return (to % 8 == 6) ? @"O-O" : @"O-O-O";
+
+    BOOL isPawn = (up == 'P');
+    BOOL capture = (gBoard[to] != ' ');
+    if (!capture && isPawn && to == gEp) capture = YES;
+
+    NSMutableString *san = [NSMutableString string];
+    if (!isPawn) [san appendFormat:@"%c", up];
+    else if (capture) [san appendFormat:@"%c", 'a' + (from % 8)];
+
+    if (!isPawn && up != 'K') {
+        char buf[256 * 6];
+        int n = StockfishLegalMoves([fen UTF8String], buf, 256);
+        BOOL anyOther = NO, sameFile = NO, sameRank = NO;
+        for (int i = 0; i < n; i++) {
+            NSString *m = [NSString stringWithFormat:@"%s", buf + i * 6];
+            int f2 = 0, t2 = 0;
+            if (!parseMoveUCI(m, &f2, &t2)) continue;
+            if (f2 == from || t2 != to) continue;
+            if (gBoard[f2] != piece) continue;
+            anyOther = YES;
+            if ((f2 % 8) == (from % 8)) sameFile = YES;
+            if ((f2 / 8) == (from / 8)) sameRank = YES;
+        }
+        if (anyOther) {
+            if (!sameFile)      [san appendFormat:@"%c", 'a' + (from % 8)];
+            else if (!sameRank) [san appendFormat:@"%c", '1' + (from / 8)];
+            else                [san appendFormat:@"%c%c", 'a' + (from % 8), '1' + (from / 8)];
+        }
+    }
+
+    if (capture) [san appendString:@"x"];
+    [san appendFormat:@"%c%c", 'a' + (to % 8), '1' + (to / 8)];
+    char promo = (uci.length > 4) ? (char)toupper([uci characterAtIndex:4]) : 0;
+    if (promo) [san appendFormat:@"=%c", promo];
+    return san;
+}
+
+static NSString *buildPGN(void) {
+    if (!gUciSeq.length || !gPgnStartFen.length) return nil;
+
+    NSArray *tokens = [gUciSeq componentsSeparatedByString:@" "];
+    NSMutableArray *sans = [NSMutableArray array];
+
+    parseFEN(gPgnStartFen);
+    NSInteger moveNo = gFull;
+    BOOL blackFirst = (gSide == 1);
+
+    for (NSString *tok in tokens) {
+        if (tok.length < 4) continue;
+        NSString *fen = generateFEN();
+        NSString *san = sanForMove(fen, tok);
+        if (!san.length) return nil;
+        [sans addObject:san];
+        int from = 0, to = 0;
+        parseMoveUCI(tok, &from, &to);
+        char promo = (tok.length > 4) ? (char)tolower([tok characterAtIndex:4]) : 0;
+        applyMove(from, to, promo);
+    }
+    if (!sans.count) return nil;
+
+    NSMutableString *body = [NSMutableString string];
+    NSInteger n = moveNo;
+    if (!blackFirst) {
+        for (NSUInteger i = 0; i < sans.count; i += 2) {
+            [body appendFormat:@"%@%@. %@", body.length ? @" " : @"", @(n++), sans[i]];
+            if (i + 1 < sans.count) [body appendFormat:@" %@", sans[i + 1]];
+        }
+    } else {
+        [body appendFormat:@"%ld... %@", (long)n, sans[0]];
+        for (NSUInteger i = 1; i < sans.count; i += 2) {
+            [body appendFormat:@" %ld. %@", ++n, sans[i]];
+            if (i + 1 < sans.count) [body appendFormat:@" %@", sans[i + 1]];
+        }
+    }
+
+    NSDateFormatter *df = [[NSDateFormatter alloc] init];
+    df.dateFormat = @"yyyy.MM.dd";
+
+    NSMutableString *pgn = [NSMutableString string];
+    [pgn appendFormat:
+        @"[Event \"Chess Assistant\"]\n"
+         "[Site \"?\"]\n"
+         "[Date \"%@\"]\n"
+         "[Round \"?\"]\n"
+         "[White \"?\"]\n"
+         "[Black \"?\"]\n"
+         "[Result \"*\"]\n",
+        [df stringFromDate:[NSDate date]]];    NSString *startpos = @"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    if (![gPgnStartFen isEqualToString:startpos]) {
+        [pgn appendFormat:@"[SetUp \"1\"]\n[FEN \"%@\"]\n", gPgnStartFen];
+    }
+    [pgn appendFormat:@"\n%@\n*\n", body];
+    return pgn;
+}
+
 static void fetchMove(NSString *fen) {
     if (!gEnabled || !fen.length) return;
     if (!fenHasBothKings(fen)) return;
@@ -2180,7 +2305,7 @@ static void fetchMove(NSString *fen) {
         });
 
         if (gTrackQuality) {
-            NSInteger gdepth = eloToDepth(gElo);
+            NSInteger gdepth = MAX(14, eloToDepth(gElo));
             EngineGo([fen UTF8String], (int)gdepth, (int)gElo, 2,
                      ^(const EngineLine *lines, int count) {
                 BOOL hasScore = (count > 0) ? lines[0].hasScore : NO;
