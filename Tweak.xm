@@ -24,6 +24,10 @@
 #define PREF_USEMAIA @"ChessAssist_UseMaia"
 #define PREF_AUTOPLAY @"ChessAssist_AutoPlay"
 #define PREF_APDELAY  @"ChessAssist_AutoPlayDelay"
+#define PREF_APJITEN  @"ChessAssist_AutoPlayJitterEnabled"
+#define PREF_APJITRNG @"ChessAssist_AutoPlayJitterRange"
+#define PREF_AP2ND    @"ChessAssist_AutoPlaySecondBest"
+#define PREF_AP2NDPCT @"ChessAssist_AutoPlaySecondBestPct"
 #define DEFAULT_ELO  800
 
 static NSInteger gElo     = DEFAULT_ELO;
@@ -61,6 +65,10 @@ static BOOL gShowEvalLabels = YES;
 static BOOL gUseMaia = NO;
 static BOOL gAutoPlay = NO;
 static double gAutoPlayDelay = 0.15;
+static BOOL gAutoPlayJitterEnabled = NO;
+static double gAutoPlayJitterRange = 1.0;
+static BOOL gAutoPlaySecondBest = NO;
+static NSInteger gAutoPlaySecondBestPct = 10;
 static NSString *gLastAutoPlayed = nil;
 static NSMutableString *gUciSeq = nil;
 static BOOL gSkipNextTap = NO;
@@ -84,6 +92,10 @@ static void savePrefs(void) {
     [d setBool:gUseMaia forKey:PREF_USEMAIA];
     [d setBool:gAutoPlay forKey:PREF_AUTOPLAY];
     [d setDouble:gAutoPlayDelay forKey:PREF_APDELAY];
+    [d setBool:gAutoPlayJitterEnabled forKey:PREF_APJITEN];
+    [d setDouble:gAutoPlayJitterRange forKey:PREF_APJITRNG];
+    [d setBool:gAutoPlaySecondBest forKey:PREF_AP2ND];
+    [d setInteger:gAutoPlaySecondBestPct forKey:PREF_AP2NDPCT];
     [d synchronize];
 }
 static void loadPrefs(void) {
@@ -104,6 +116,18 @@ static void loadPrefs(void) {
         if (gAutoPlayDelay < 0) gAutoPlayDelay = 0;
         if (gAutoPlayDelay > 5.0) gAutoPlayDelay = 5.0;
     }
+    if ([d objectForKey:PREF_APJITEN]) gAutoPlayJitterEnabled = [d boolForKey:PREF_APJITEN];
+    if ([d objectForKey:PREF_APJITRNG]) {
+        gAutoPlayJitterRange = [d doubleForKey:PREF_APJITRNG];
+        if (gAutoPlayJitterRange < 0) gAutoPlayJitterRange = 0;
+        if (gAutoPlayJitterRange > 2.0) gAutoPlayJitterRange = 2.0;
+    }
+    if ([d objectForKey:PREF_AP2ND]) gAutoPlaySecondBest = [d boolForKey:PREF_AP2ND];
+    if ([d objectForKey:PREF_AP2NDPCT]) {
+        gAutoPlaySecondBestPct = [d integerForKey:PREF_AP2NDPCT];
+    }
+    if (gAutoPlaySecondBestPct < 0) gAutoPlaySecondBestPct = 0;
+    if (gAutoPlaySecondBestPct > 50) gAutoPlaySecondBestPct = 50;
     if (gArrowCount < 1) gArrowCount = 1; if (gArrowCount > 3) gArrowCount = 3;
 }
 
@@ -1084,6 +1108,8 @@ static void clampGeloToActiveRange(void) {
     UILabel     *_eloValue;
     UILabel     *_eloTier;
     UILabel     *_apDelayValue;
+    UILabel     *_apJitterValue;
+    UILabel     *_apSecondPctValue;
     UILabel     *_opValue;
 }
 @end
@@ -1475,11 +1501,38 @@ static void clampGeloToActiveRange(void) {
         apDelay.value = gAutoPlayDelay; apDelay.minimumTrackTintColor = CH_ACCENT;
         [apDelay addTarget:self action:@selector(apDelaySlide:) forControlEvents:UIControlEventValueChanged];
         [apDelay addTarget:self action:@selector(apDelayDone:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside];
+
+        _apJitterValue = [self lbl:[NSString stringWithFormat:@"±%.1fs", gAutoPlayJitterRange]
+                              size:15 weight:UIFontWeightSemibold color:CH_ACCENT];
+        [_apJitterValue setContentHuggingPriority:1000 forAxis:UILayoutConstraintAxisHorizontal];
+        UISlider *apJitter = [[UISlider alloc] init];
+        apJitter.minimumValue = 0.0; apJitter.maximumValue = 2.0;
+        apJitter.value = gAutoPlayJitterRange; apJitter.minimumTrackTintColor = CH_ACCENT;
+        [apJitter addTarget:self action:@selector(apJitterSlide:) forControlEvents:UIControlEventValueChanged];
+        [apJitter addTarget:self action:@selector(apJitterDone:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside];
+
+        _apSecondPctValue = [self lbl:[NSString stringWithFormat:@"%ld%%", (long)gAutoPlaySecondBestPct]
+                     size:15 weight:UIFontWeightSemibold color:CH_ACCENT];
+        [_apSecondPctValue setContentHuggingPriority:1000 forAxis:UILayoutConstraintAxisHorizontal];
+        UISlider *apSecondPct = [[UISlider alloc] init];
+        apSecondPct.minimumValue = 0.0; apSecondPct.maximumValue = 50.0;
+        apSecondPct.value = gAutoPlaySecondBestPct; apSecondPct.minimumTrackTintColor = CH_ACCENT;
+        [apSecondPct addTarget:self action:@selector(apSecondPctSlide:) forControlEvents:UIControlEventValueChanged];
+        [apSecondPct addTarget:self action:@selector(apSecondPctDone:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside];
+
         UIStackView *apCol = [[UIStackView alloc] initWithArrangedSubviews:@[
             [self rowTitle:@"Auto Play" control:[self switchOn:gAutoPlay sel:@selector(swAutoPlay:)]],
             [self sep],
             [self rowTitle:@"Move Delay" control:_apDelayValue],
             [self sliderRow:apDelay],
+            [self sep],
+            [self rowTitle:@"Jitter" control:[self switchOn:gAutoPlayJitterEnabled sel:@selector(swAutoJitter:)]],
+            [self rowTitle:@"Jitter Range" control:_apJitterValue],
+            [self sliderRow:apJitter],
+            [self sep],
+            [self rowTitle:@"2nd Move Chance" control:[self switchOn:gAutoPlaySecondBest sel:@selector(swAutoSecondBest:)]],
+            [self rowTitle:@"2nd Move %" control:_apSecondPctValue],
+            [self sliderRow:apSecondPct],
             [self lbl:@"Wait after opponent's move before auto playing." size:11 weight:UIFontWeightRegular color:[UIColor colorWithWhite:0.5 alpha:1]]]];
         apCol.axis = UILayoutConstraintAxisVertical; apCol.spacing = 12;
         [_stack addArrangedSubview:[self group:apCol]];
@@ -1557,6 +1610,14 @@ static void clampGeloToActiveRange(void) {
     dbg([NSString stringWithFormat:@"Auto play: %@", gAutoPlay ? @"ON" : @"OFF"]);
     if (!gAutoPlay) gLastAutoPlayed = nil;
 }
+- (void)swAutoJitter:(UISwitch *)s {
+    gAutoPlayJitterEnabled = s.on;
+    savePrefs();
+}
+- (void)swAutoSecondBest:(UISwitch *)s {
+    gAutoPlaySecondBest = s.on;
+    savePrefs();
+}
 - (void)apDelaySlide:(UISlider *)s {
     double v = round(s.value * 10.0) / 10.0; s.value = v;
     _apDelayValue.text = [NSString stringWithFormat:@"%.1fs", v];
@@ -1565,6 +1626,30 @@ static void clampGeloToActiveRange(void) {
     gAutoPlayDelay = round(s.value * 10.0) / 10.0;
     savePrefs();
     dbg([NSString stringWithFormat:@"Auto play delay: %.1fs", gAutoPlayDelay]);
+}
+- (void)apJitterSlide:(UISlider *)s {
+    double v = round(s.value * 10.0) / 10.0; s.value = v;
+    _apJitterValue.text = [NSString stringWithFormat:@"±%.1fs", v];
+}
+- (void)apJitterDone:(UISlider *)s {
+    gAutoPlayJitterRange = round(s.value * 10.0) / 10.0;
+    if (gAutoPlayJitterRange < 0) gAutoPlayJitterRange = 0;
+    if (gAutoPlayJitterRange > 2.0) gAutoPlayJitterRange = 2.0;
+    savePrefs();
+}
+- (void)apSecondPctSlide:(UISlider *)s {
+    NSInteger v = (NSInteger)lround(s.value);
+    if (v < 0) v = 0;
+    if (v > 50) v = 50;
+    s.value = (float)v;
+    _apSecondPctValue.text = [NSString stringWithFormat:@"%ld%%", (long)v];
+}
+- (void)apSecondPctDone:(UISlider *)s {
+    NSInteger v = (NSInteger)lround(s.value);
+    if (v < 0) v = 0;
+    if (v > 50) v = 50;
+    gAutoPlaySecondBestPct = v;
+    savePrefs();
 }
 - (void)copyFenTap {
     NSString *fen = gLastFen;
@@ -1583,6 +1668,10 @@ static void clampGeloToActiveRange(void) {
     gArrowThick   = 0.7;
     gUseMaia      = YES;
     gAutoPlay     = NO;
+    gAutoPlayJitterEnabled = NO;
+    gAutoPlayJitterRange = 1.0;
+    gAutoPlaySecondBest = NO;
+    gAutoPlaySecondBestPct = 10;
     gElo          = 1000;
     gLastFen      = nil;
     gLastAutoPlayed = nil;
@@ -1819,15 +1908,18 @@ static void chFakeTouchFire(CGPoint ptInWin, UIWindow *win, UITouchPhase phase) 
     }
 }
 
-static void playMoveOnBoard(NSString *uci, NSString *fenSnap) {
-    if (!gEnabled || !gAutoPlay) return;
-    if (![fenSnap isEqualToString:gLastFen]) return;
+static BOOL playMoveOnBoard(NSString *uci, NSString *fenSnap, UIView *preferredBoard) {
+    if (!gEnabled || !gAutoPlay) return NO;
+    if (![fenSnap isEqualToString:gLastFen]) return NO;
 
-    UIView *board = gDrawBoard ?: gBoardView ?: gBotBoard;
-    if (!board || !board.window || !isBoardOnScreen(board)) { dbg(@"autoplay: no board"); return; }
+    UIView *board = preferredBoard;
+    if (!board || !board.window || !isBoardOnScreen(board)) {
+        board = gDrawBoard ?: gBoardView ?: gBotBoard;
+    }
+    if (!board || !board.window || !isBoardOnScreen(board)) { dbg(@"autoplay: no board"); return NO; }
 
     int fromSq = 0, toSq = 0;
-    if (!parseMoveUCI(uci, &fromSq, &toSq)) { dbg(@"autoplay: bad move"); return; }
+    if (!parseMoveUCI(uci, &fromSq, &toSq)) { dbg(@"autoplay: bad move"); return NO; }
 
     BOOL flipped = detectBoardFlipped(board);
     CGRect winRect = [board convertRect:board.bounds toView:nil];
@@ -1854,7 +1946,6 @@ static void playMoveOnBoard(NSString *uci, NSString *fenSnap) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.03 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         chFakeTouchFire(fromWin, win, UITouchPhaseEnded);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.09 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            if (![fenSnap isEqualToString:gLastFen]) return;
             chFakeTouchFire(toWin, win, UITouchPhaseBegan);
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.03 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 chFakeTouchFire(toWin, win, UITouchPhaseEnded);
@@ -1869,21 +1960,49 @@ static void playMoveOnBoard(NSString *uci, NSString *fenSnap) {
             });
         });
     });
+    return YES;
 }
 
-static void tryAutoPlay(NSString *bestmove, NSString *fenSnap) {
+static void tryAutoPlay(NSString *bestmove, NSString *altMove, NSString *fenSnap, UIView *preferredBoard) {
     if (!gAutoPlay || !gEnabled) return;
     if (gPuzzleCtx) return;
     if (bestmove.length < 4) return;
     if (!fenSnap.length || [fenSnap isEqualToString:gLastAutoPlayed]) return;
-    gLastAutoPlayed = [fenSnap copy];
+
+    NSString *chosen = bestmove;
+    if (gAutoPlaySecondBest && altMove.length >= 4 && ![altMove isEqualToString:bestmove]) {
+        uint32_t chance = (uint32_t)MAX(0, MIN(100, (int)gAutoPlaySecondBestPct));
+        if (chance > 0 && arc4random_uniform(100) < chance) chosen = altMove;
+    }
 
     double delay = gAutoPlayDelay;
+    if (gAutoPlayJitterEnabled && gAutoPlayJitterRange > 0.0) {
+        double r = gAutoPlayJitterRange;
+        double jit = ((double)arc4random_uniform(2001) / 1000.0 - 1.0) * r;
+        delay += jit;
+    }
     if (delay < 0.0) delay = 0.0;
     if (delay > 6.0) delay = 6.0;
 
+    __block int retries = 0;
+    __block void (^attempt)(void) = nil;
+    attempt = ^{
+        if (!gAutoPlay || !gEnabled) return;
+        if (![fenSnap isEqualToString:gLastFen]) return;
+        if ([fenSnap isEqualToString:gLastAutoPlayed]) return;
+        if (playMoveOnBoard(chosen, fenSnap, preferredBoard)) {
+            gLastAutoPlayed = [fenSnap copy];
+            return;
+        }
+        retries++;
+        if (retries < 15) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.12 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), attempt);
+        }
+    };
+
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{ playMoveOnBoard(bestmove, fenSnap); });
+                   dispatch_get_main_queue(), attempt);
 }
 
 static void applyEngineResult(NSString *bestmove, NSArray *extraMoves, BOOL isMate, int mateIn,
@@ -1914,6 +2033,11 @@ static void applyEngineResult(NSString *bestmove, NSArray *extraMoves, BOOL isMa
     updateFloatBtn(btnText);
 
     UIView *board = drawBoard;
+    NSString *altMove = nil;
+    if (extraMoves.count > 0) {
+        NSDictionary *c = extraMoves.firstObject;
+        if ([c isKindOfClass:[NSDictionary class]]) altMove = c[@"move"];
+    }
     if (!board || !board.window) board = gDrawBoard ?: gBoardView;
     if (board) {
         BOOL flipped = detectBoardFlipped(board);
@@ -1929,10 +2053,10 @@ static void applyEngineResult(NSString *bestmove, NSArray *extraMoves, BOOL isMa
             rank++;
         }
         drawArrowsOnBoard(arrows, board, flipped);
-        tryAutoPlay(bestmove, gLastFen);
     } else {
         dbg(@"no board ref for arrow");
     }
+    tryAutoPlay(bestmove, altMove, gLastFen, board);
 }
 
 static BOOL fenHasBothKings(NSString *fen) {
@@ -1973,6 +2097,11 @@ static NSArray<NSString *> *maiaCandidatePaths(void) {
 
 static BOOL sMaiaRetryDone = NO;
 
+static BOOL isInitialStartFEN(NSString *fen) {
+    if (!fen.length) return NO;
+    return [fen hasPrefix:@"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w "];
+}
+
 static void ensureMaiaLoaded(void) {
     if (MaiaAvailable()) return;
     if (sMaiaRetryDone) return;
@@ -1995,6 +2124,7 @@ static void fetchMove(NSString *fen) {
     if (!gEnabled || !fen.length) return;
     if (!fenHasBothKings(fen)) return;
     if (!StockfishFenLegal([fen UTF8String])) { dbg(@"skip illegal pos"); return; }
+    if (isInitialStartFEN(fen)) gLastAutoPlayed = nil;
     if ([fen isEqualToString:gLastFen]) return;
 
     if (gFetching && gLastFetch && [[NSDate date] timeIntervalSinceDate:gLastFetch] > 5.0) {

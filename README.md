@@ -12,7 +12,9 @@ Everything runs locally on the device. No network requests, no move data leaves 
 - **Multi-line arrows** — show up to 3 candidate moves with per-move eval labels
 - **Eval display** — centipawn or win-% evaluation on the floating button
 - **Move Analysis** — grades each of your moves (Brilliant → Blunder), tracks accuracy % and a full breakdown in the settings panel
-- **Auto Play** — optional toggle that automatically plays the suggested best move right after your opponent moves
+- **Auto Play** — optional toggle that automatically plays the suggested move right after your opponent moves
+- **Auto Play timing controls** — base delay slider plus optional jitter switch with adjustable ± range
+- **Humanization controls** — optional second-best move switch with configurable chance (0–50%)
 - **Arrow styling** — color by eval / solid green, thin–thick shafts, adjustable opacity
 - Works in online games, bot games, and puzzles
 
@@ -36,10 +38,13 @@ Grab the iOS 16 / 17 IPA from the [releases page](https://github.com/itzzace/che
 
 1. Open Chess.com and start any game.
 2. Tap the floating ♟ button to open the settings panel.
-3. Set your ELO, toggle Maia / Auto Play / Move Analysis as desired.
-4. Arrows appear on the board when it's your turn.
+3. Set your ELO, then tune Maia / Auto Play / Move Analysis as desired.
+4. (Optional) In Auto Play, configure Move Delay, enable Jitter and set its range, and enable 2nd Move Chance with your preferred percentage.
+5. Arrows appear on the board when it's your turn.
 
-Tap **Debug Log** in the panel to view recent events (FEN detection, engine responses, hooks installed).
+Auto Play uses your configured delay exactly when Jitter is off; when Jitter is on, a random offset in your configured ± range is applied.
+
+If 2nd Move Chance is enabled, Auto Play can pick the second candidate move using your configured percentage.
 
 > ⚠️ Using an assistant violates Chess.com's fair-play policy and can get your account banned. Higher strengths (>~1500 ELO) are much easier to detect.
 
@@ -73,14 +78,14 @@ CI does all of this automatically — see [.github/workflows/build.yml](.github/
 
 ## Project layout
 
-| File | Purpose |
-|------|---------|
-| `Tweak.xm` | Main tweak: board/FEN detection, arrow rendering, settings UI, auto play |
-| `engine.mm` | Stockfish embedded via UCI stream redirection (`EngineGo`, FEN legality, legal-move enumeration) |
-| `maia.mm` | Maia 3 CoreML inference wrapper |
-| `web/` | Landing page / repo site |
-| `Makefile` | Theos tweak build (`com.chess.assistant`, rootless) |
-| `.github/workflows/` | CI: builds libstockfish.a + .deb, publishes releases & apt repo |
+| File                 | Purpose                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| `Tweak.xm`           | Main tweak: board/FEN detection, arrow rendering, settings UI, auto play                         |
+| `engine.mm`          | Stockfish embedded via UCI stream redirection (`EngineGo`, FEN legality, legal-move enumeration) |
+| `maia.mm`            | Maia 3 CoreML inference wrapper                                                                  |
+| `web/`               | Landing page / repo site                                                                         |
+| `Makefile`           | Theos tweak build (`com.chess.assistant`, rootless)                                              |
+| `.github/workflows/` | CI: builds libstockfish.a + .deb, publishes releases & apt repo                                  |
 
 ## Credits
 
