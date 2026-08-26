@@ -1986,6 +1986,7 @@ static void tryAutoPlay(NSString *bestmove, NSString *altMove, NSString *fenSnap
 
     __block int retries = 0;
     __block void (^attempt)(void) = nil;
+    __weak void (^weakAttempt)(void) = nil;
     attempt = ^{
         if (!gAutoPlay || !gEnabled) return;
         if (![fenSnap isEqualToString:gLastFen]) return;
@@ -1997,12 +1998,13 @@ static void tryAutoPlay(NSString *bestmove, NSString *altMove, NSString *fenSnap
         retries++;
         if (retries < 15) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.12 * NSEC_PER_SEC)),
-                           dispatch_get_main_queue(), attempt);
+                           dispatch_get_main_queue(), weakAttempt);
         }
     };
+    weakAttempt = attempt;
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), attempt);
+                   dispatch_get_main_queue(), weakAttempt);
 }
 
 static void applyEngineResult(NSString *bestmove, NSArray *extraMoves, BOOL isMate, int mateIn,
