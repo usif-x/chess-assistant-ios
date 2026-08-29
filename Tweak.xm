@@ -1867,11 +1867,11 @@ static void updateEvalBar(void) {
     fill.zPosition = 10006;
 
     CATextLayer *tl = [CATextLayer layer];
-    tl.frame = CGRectMake(bar.origin.x, bar.origin.y - fillLift, bar.size.width, barH);
+    tl.frame = CGRectMake(bar.origin.x, bar.origin.y - fillLift + 1, bar.size.width, barH - 2);
     tl.string = txt;
     tl.fontSize = 11;
     tl.alignmentMode = kCAAlignmentCenter;
-    tl.foregroundColor = txtColor.CGColor;
+    tl.foregroundColor = [UIColor colorWithRed:1.0 green:0.45 blue:0.45 alpha:1.0].CGColor;
     tl.contentsScale = [UIScreen mainScreen].scale;
     tl.zPosition = 10007;
 
@@ -2392,6 +2392,29 @@ static void fetchMove(NSString *fen) {
             });
         });
 
+        // eval bar must always reflect Stockfish, even when Maia is the
+        // move-providing engine — run a dedicated 1-line SF query solely
+        // to update the bar's eval/mate data
+        EngineGo([fen UTF8String], 14, 1320, 1,
+                 ^(const EngineLine *lines, int count) {
+            if (count <= 0) return;
+            BOOL hasScore = lines[0].hasScore;
+            BOOL lmate = lines[0].isMate;
+            int  lscore = lines[0].score;
+            double rawWhite = 0; BOOL mate = NO; int mateIn = 0;
+            if (hasScore) {
+                if (lmate) { mate = YES; mateIn = stmWhite ? lscore : -lscore; }
+                else { double cp = lscore / 100.0; rawWhite = stmWhite ? cp : -cp; }
+            }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (![snap isEqualToString:gLastFen]) { dbg(@"stale bar resp"); return; }
+                gBarWhiteEval = rawWhite;
+                gBarIsMate = mate;
+                gBarMateWhite = mate ? mateIn : 0;
+                gBarHave = YES;
+                updateEvalBar();
+            });
+        });
         if (gTrackQuality) {
             NSInteger gdepth = MAX(14, eloToDepth(gElo));
             EngineGo([fen UTF8String], (int)gdepth, (int)gElo, 2,
