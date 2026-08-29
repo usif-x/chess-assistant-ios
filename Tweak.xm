@@ -1835,13 +1835,9 @@ static void updateEvalBar(void) {
     if (bF.size.width < 60) return;
     BOOL masked = board.layer.masksToBounds;
 
-    // horizontal bar sitting above the board, raised by an extra bar-height so
-    // it never touches the top rank; falls back to an overlay pinned inside
-    // the top edge if the board clips its own layer
-    CGRect bar = CGRectMake(2, masked ? 3 : -(barH * 2 + 6), bF.size.width - 4, barH);
-
     // white fill sits one bar-height above the black bar's position
     CGFloat fillLift = barH + 2;
+    CGRect bar = CGRectMake(2, masked ? 3 : -(barH * 2 + 6) + fillLift, bF.size.width - 4, barH);
 
     double frac = 0.5;
     NSString *txt;
@@ -1854,7 +1850,7 @@ static void updateEvalBar(void) {
         frac = MIN(0.97, MAX(0.03, wp / 100.0));
         txt = [NSString stringWithFormat:@"%+.1f", gBarWhiteEval];
     }
-    UIColor *txtColor = frac >= 0.5 ? UIColor.blackColor : UIColor.whiteColor;
+    UIColor *txtColor = [UIColor yellowColor];
 
     if (!gEvalBarLayers) gEvalBarLayers = [NSMutableArray array];
 
@@ -1871,7 +1867,7 @@ static void updateEvalBar(void) {
     fill.zPosition = 10006;
 
     CATextLayer *tl = [CATextLayer layer];
-    tl.frame = bar;
+    tl.frame = CGRectMake(bar.origin.x, bar.origin.y - fillLift, bar.size.width, barH);
     tl.string = txt;
     tl.fontSize = 11;
     tl.alignmentMode = kCAAlignmentCenter;
