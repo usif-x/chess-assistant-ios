@@ -74,7 +74,7 @@ cd ../..
 make package FINALPACKAGE=1
 ```
 
-CI does all of this automatically — see [.github/workflows/build.yml](.github/workflows/build.yml). The Maia 3 CoreML model (`maia3_5m.mlpackage`) is downloaded from the repo's `maia-model` release during packaging and installed to `/var/jb/Library/Application Support/Chess/`.
+CI does all of this automatically — see [.github/workflows/build.yml](.github/workflows/build.yml). The Maia 3 CoreML model (`maia3_23m.mlpackage`, 23M float16) is downloaded from the repo's `maia-model` release during packaging and installed to `/var/jb/Library/Application Support/Chess/`.
 
 ## Project layout
 

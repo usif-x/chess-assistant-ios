@@ -149,13 +149,12 @@ static double evalToWinPct(double pawns, BOOL isMate, int mateIn) {
 }
 
 static NSInteger eloToDepth(NSInteger elo) {
-    if (elo >= 3000) return 20;  if (elo >= 2600) return 18;
-    if (elo >= 2400) return 16;  if (elo >= 2200) return 14;
-    if (elo >= 2000) return 13;  if (elo >= 1800) return 12;
-    if (elo >= 1600) return 11;  if (elo >= 1400) return 10;
-    if (elo >= 1200) return 9;   if (elo >= 1000) return 8;
-    if (elo >= 700)  return 6;   if (elo >= 500) return 5;
-    return 4;
+    if (elo >= 3100) return 22;  if (elo >= 2900) return 20;
+    if (elo >= 2700) return 19;  if (elo >= 2500) return 18;
+    if (elo >= 2300) return 17;  if (elo >= 2100) return 16;
+    if (elo >= 1900) return 15;  if (elo >= 1700) return 14;
+    if (elo >= 1500) return 13;  if (elo >= 1320) return 12;
+    return 12;
 }
 
 static void showQualityToast(NSString *text, UIColor *color);
@@ -1026,8 +1025,8 @@ static void showSettingsMenu(void) {
 }
 @end
 
-static const NSInteger kEloLevels[] = {400,600,800,1000,1200,1400,1600,1800,2000,2200,2400,2800,3200,3500};
-static const int kEloCount = 14;
+static const NSInteger kEloLevels[] = {1320,1420,1520,1620,1720,1820,1920,2020,2120,2220,2320,2420,2520,2620,2720,2820,2920,3020,3120,3190};
+static const int kEloCount = 20;
 static NSString *ecoName(void) {
     if (!gUciSeq || !gUciSeq.length) return nil;
     static NSDictionary<NSString *, NSString *> *sTable = nil;
@@ -1091,9 +1090,9 @@ static NSString *eloTierName(NSInteger e) {    if (e < 600)  return @"Novice";  
     if (e < 2800) return @"IM / GM";       if (e < 3200) return @"Super-GM";
     if (e < 3500) return @"Engine";        return @"Maximum";
 }
-// Maia human-like range — the model is trained on games between ~800 and 2000 ELO
-static const NSInteger kMaiaLevels[] = {900,1000,1100,1200,1300,1400,1500,1600,1700,1800,1900,2000};
-static const int kMaiaLevelCount = 12;
+// Maia human-like range — 600 to 2800, step 100 (23 levels)
+static const NSInteger kMaiaLevels[] = {600,700,800,900,1000,1100,1200,1300,1400,1500,1600,1700,1800,1900,2000,2100,2200,2300,2400,2500,2600,2700,2800};
+static const int kMaiaLevelCount = 23;
 
 static const NSInteger *activeEloLevels(int *outCount) {
     if (gUseMaia) { *outCount = kMaiaLevelCount; return kMaiaLevels; }
@@ -2186,13 +2185,13 @@ static BOOL fenHasBothKings(NSString *fen) {
 
 static NSArray<NSString *> *maiaCandidatePaths(void) {
     NSMutableArray *c = [@[
-        @"/var/jb/Library/Application Support/Chess/maia3_5m.mlpackage",
-        @"/Library/Application Support/Chess/maia3_5m.mlpackage",
+        @"/var/jb/Library/Application Support/Chess/maia3_23m.mlpackage",
+        @"/Library/Application Support/Chess/maia3_23m.mlpackage",
     ] mutableCopy];
     NSString *res = [[NSBundle mainBundle] resourcePath];
     if (res) {
-        [c addObject:[res stringByAppendingPathComponent:@"maia3_5m.mlpackage"]];
-        [c addObject:[res stringByAppendingPathComponent:@"Chess/maia3_5m.mlpackage"]];
+        [c addObject:[res stringByAppendingPathComponent:@"maia3_23m.mlpackage"]];
+        [c addObject:[res stringByAppendingPathComponent:@"Chess/maia3_23m.mlpackage"]];
     }
     // resolve the real jailbreak root via /private/preboot if /var/jb is unreadable from the app sandbox
     @try {
@@ -2203,7 +2202,7 @@ static NSArray<NSString *> *maiaCandidatePaths(void) {
             for (NSString *s in subs) {
                 if (![s hasPrefix:@"jb-"]) continue;
                 [c addObject:[[base stringByAppendingPathComponent:s]
-                    stringByAppendingPathComponent:@"Library/Application Support/Chess/maia3_5m.mlpackage"]];
+                    stringByAppendingPathComponent:@"Library/Application Support/Chess/maia3_23m.mlpackage"]];
             }
         }
     } @catch (NSException *e) {}
@@ -2419,7 +2418,7 @@ static void fetchMove(NSString *fen) {
         return;
     }
 
-    NSInteger depth = eloToDepth(gElo);
+    NSInteger depth = MAX(14, eloToDepth(gElo));
     dbg([NSString stringWithFormat:@"fetch d%ld: %@", (long)depth,
          [fen substringToIndex:MIN(fen.length, 45)]]);
 

@@ -106,25 +106,21 @@ static MLMultiArray *buildTokens(const char *fen, int sideBlack) {
     }
 
     NSError *err = nil;
-    MLMultiArray *arr = [[MLMultiArray alloc] initWithShape:@[@1, @64, @96]
+    MLMultiArray *arr = [[MLMultiArray alloc] initWithShape:@[@1, @64, @12]
                                                    dataType:MLMultiArrayDataTypeFloat32
                                                       error:&err];
     if (!arr) return nil;
-    float *dst = (float *)arr.dataPointer;
-    for (int sqi = 0; sqi < 64; sqi++)
-        for (int f = 0; f < 8; f++)
-            for (int ch = 0; ch < 12; ch++)
-                dst[sqi * 96 + f * 12 + ch] = base[sqi * 12 + ch];
+    memcpy(arr.dataPointer, base, sizeof(base));
     return arr;
 }
 
-static MLMultiArray *scalarInt32(int v) {
+static MLMultiArray *scalarFloat32(float v) {
     NSError *err = nil;
     MLMultiArray *a = [[MLMultiArray alloc] initWithShape:@[@1]
-                                                 dataType:MLMultiArrayDataTypeInt32
+                                                 dataType:MLMultiArrayDataTypeFloat32
                                                     error:&err];
     if (!a) return nil;
-    ((int32_t *)a.dataPointer)[0] = (int32_t)v;
+    ((float *)a.dataPointer)[0] = v;
     return a;
 }
 
@@ -188,7 +184,7 @@ extern "C" bool MaiaLoadEmbedded(void) {
         if (!mf || !md || !wg || mfLen == 0 || mdLen == 0 || wLen == 0) return false;
 
         NSFileManager *fm = [NSFileManager defaultManager];
-        NSString *dir = [NSTemporaryDirectory() stringByAppendingPathComponent:@"maia3_5m.mlpackage"];
+        NSString *dir = [NSTemporaryDirectory() stringByAppendingPathComponent:@"maia3_23m.mlpackage"];
         [fm removeItemAtPath:dir error:nil];
 
         NSString *weightsDir = [dir stringByAppendingPathComponent:@"Data/com.apple.CoreML/weights"];
@@ -229,14 +225,14 @@ extern "C" void MaiaGo(const char *fen, int selfElo, int oppoElo, MaiaResultBloc
 
     @autoreleasepool {
         MLMultiArray *tokens = buildTokens(fen, sideBlack);
-        MLMultiArray *se = scalarInt32(selfElo);
-        MLMultiArray *oe = scalarInt32(oppoElo);
+        MLMultiArray *se = scalarFloat32((float)selfElo);
+        MLMultiArray *oe = scalarFloat32((float)oppoElo);
         if (!tokens || !se || !oe) { if (done) done(res); return; }
 
         NSDictionary *feats = @{
             @"tokens": [MLFeatureValue featureValueWithMultiArray:tokens],
-            @"self_elo": [MLFeatureValue featureValueWithMultiArray:se],
-            @"oppo_elo": [MLFeatureValue featureValueWithMultiArray:oe],
+            @"elo_self": [MLFeatureValue featureValueWithMultiArray:se],
+            @"elo_oppo": [MLFeatureValue featureValueWithMultiArray:oe],
         };
         NSError *err = nil;
         MLDictionaryFeatureProvider *prov =
@@ -249,8 +245,8 @@ extern "C" void MaiaGo(const char *fen, int selfElo, int oppoElo, MaiaResultBloc
             return;
         }
 
-        MLMultiArray *moveLogits = [out featureValueForName:@"move_logits"].multiArrayValue;
-        MLMultiArray *valueLogits = [out featureValueForName:@"value_logits"].multiArrayValue;
+        MLMultiArray *moveLogits = [out featureValueForName:@"logits_move"].multiArrayValue;
+        MLMultiArray *valueLogits = [out featureValueForName:@"logits_value"].multiArrayValue;
         if (!moveLogits) { if (done) done(res); return; }
 
         struct Cand { double logit; std::string uci; };

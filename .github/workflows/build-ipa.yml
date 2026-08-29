@@ -60,12 +60,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download maia-model --repo "$GITHUB_REPOSITORY" --pattern 'maia3_5m.mlpackage.zip' --output model.zip --clobber
+          gh release download maia-model --repo "$GITHUB_REPOSITORY" --pattern 'maia3_23m.mlpackage.zip' --output model.zip --clobber
           rm -rf work && mkdir work && cd work
           unzip -qq "../$OUT"
           APP="$(find Payload -maxdepth 1 -name '*.app' -print -quit)"
           unzip -qq ../model.zip -d "$APP"
-          test -d "$APP/maia3_5m.mlpackage"
+          test -d "$APP/maia3_23m.mlpackage"
           echo "bundled model into $APP"
           rm -f "../$OUT"
           zip -qry "../$OUT" Payload
