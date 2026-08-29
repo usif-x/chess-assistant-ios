@@ -1850,8 +1850,6 @@ static void updateEvalBar(void) {
         frac = MIN(0.97, MAX(0.03, wp / 100.0));
         txt = [NSString stringWithFormat:@"%+.1f", gBarWhiteEval];
     }
-    UIColor *txtColor = [UIColor yellowColor];
-
     if (!gEvalBarLayers) gEvalBarLayers = [NSMutableArray array];
 
     CALayer *bg = [CALayer layer];
