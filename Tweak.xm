@@ -1491,7 +1491,6 @@ static void clampGeloToActiveRange(void) {
             [self rowTitle:@"Evaluation" control:evalSeg], [self sep],
             [self rowTitle:@"Arrows" control:arrSeg], [self sep],
             [self rowTitle:@"Thickness" control:thickSeg], [self sep],
-            [self rowTitle:@"Eval Bar" control:[self switchOn:gShowEvalBar sel:@selector(swEvalBar:)]], [self sep],
             [self rowTitle:@"Opacity" control:_opValue],
             [self sliderRow:op]]];
         grp.axis = UILayoutConstraintAxisVertical; grp.spacing = 12;
@@ -1502,6 +1501,8 @@ static void clampGeloToActiveRange(void) {
 
         NSMutableArray *swRows = [NSMutableArray array];
         [swRows addObject:[self rowTitle:@"Move Analysis" control:[self switchOn:gTrackQuality sel:@selector(swAnalysis:)]]];
+        [swRows addObject:[self sep]];
+        [swRows addObject:[self rowTitle:@"Eval Bar" control:[self switchOn:gShowEvalBar sel:@selector(swEvalBar:)]]];
         [swRows addObject:[self sep]];
         [swRows addObject:[self rowTitle:@"Eval Labels" control:[self switchOn:gShowEvalLabels sel:@selector(swLabels:)]]];
         [swRows addObject:[self sep]];
@@ -1839,6 +1840,9 @@ static void updateEvalBar(void) {
     // the top edge if the board clips its own layer
     CGRect bar = CGRectMake(2, masked ? 3 : -(barH * 2 + 6), bF.size.width - 4, barH);
 
+    // white fill sits one bar-height above the black bar's position
+    CGFloat fillLift = barH + 2;
+
     double frac = 0.5;
     NSString *txt;
     if (gBarIsMate) {
@@ -1861,7 +1865,7 @@ static void updateEvalBar(void) {
     bg.zPosition = 10005;
 
     CALayer *fill = [CALayer layer];
-    fill.frame = CGRectMake(1, 1, MAX(2, (bar.size.width - 2) * frac), barH - 2);
+    fill.frame = CGRectMake(1, 1 - fillLift, MAX(2, (bar.size.width - 2) * frac), barH - 2);
     fill.backgroundColor = [UIColor whiteColor].CGColor;
     fill.cornerRadius = 3;
     fill.zPosition = 10006;
